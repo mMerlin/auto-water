@@ -1,0 +1,8 @@
+{
+  "browser": false,
+  "node": true,
+  "devel": false,
+  "todo": false,
+  "indent": 2,
+  "maxlen": 82
+}

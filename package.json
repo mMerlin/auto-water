@@ -1,0 +1,34 @@
+{
+  "name": "auto-water",
+  "version": "0.0.1",
+  "description":
+    "Use moisture sensor data to contol an automatic watering system",
+  "main": "watering.js",
+  "repository" : {
+    "type": "git",
+    "url": "https://github.com/mMerlin/auto-water.git"
+  },
+  "keywords": [
+    "control",
+    "sensor",
+    "Arduino",
+    "firmata",
+    "hardware"
+  ],
+  "author": "Phil Duby",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/mMerlin/auto-water/issues"
+  },
+  "homepage": "https://github.com/mMerlin/auto-water/",
+  "dependencies": {
+    "johnny-five": "^0.8.58",
+    "plotly": "^1.0.2"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "engines": { "node": "*" },
+  "contributors": []
+}
