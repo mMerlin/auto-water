@@ -27,7 +27,7 @@ plotly
 #Install
 ```bash
 git clone https://github.com/mMerlin/auto-water.git
-cd clone
+cd auto-water
 npm install
 mkdir .private
 cp userinfo.js .private/
