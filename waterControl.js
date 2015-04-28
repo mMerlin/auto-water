@@ -1,8 +1,7 @@
 'use strict';
 
 // predeclare variables to hold functions, to avoid used before declared issues
-var initializeDataLogging, initializeMonitoring, checkSensor, processNextSensor,
-  primePump, activateControl, endCorrection, endPumping;
+var initializeDataLogging, initializeMonitoring, checkSensor, processNextSensor;
 
 // Collect the needed external pieces
 var five = require('johnny-five');
@@ -10,8 +9,8 @@ var config = require('./controlcfg.js');
 var dataLog = require('./lib/plotlyLogging.js');
 
 // file/module scope variables
-var board, waitingQueue;
 function nowString() { return new Date().toISOString(); }//DEBUG
+var board, waitingQueue, queueIsProcessing, sensorIsProcessing;
 console.log(nowString(), 'modules loaded:');//trace
 
 // IDEA: The queue could potentially cover sensors across multiple boards
@@ -21,6 +20,9 @@ console.log(nowString(), 'modules loaded:');//trace
 // apply only within a single board, or is this (partly) a power concern accorss
 // the whole system?
 waitingQueue = [];
+// Semaphore flags
+queueIsProcessing = false;
+sensorIsProcessing = false;
 
 
 /**
@@ -56,19 +58,33 @@ function isQueuedSensor(sensor) {
 
 function dequeueSensor(sensor) {
   /* jshint validthis: true */
+  sensorIsProcessing = false;
+  if (waitingQueue.length < 1) {
+    console.log('no entry in the queue: overlapping processing error');
+    return;
+  }
   var first = waitingQueue.shift();
   if (first !== sensor) {// directly compare object instances
+    if (typeof first !== 'object') {
+      console.log('Queue entry is not an object: processing error');
+      return;
+    }
     console.log('Logic error: current process was for trace', sensor.id,
       'but queue said', first.id);//DEBUG
     //'on ', sensor.board.id,
+    return;
   }//DEBUG
 
-  console.log(nowString(), 'hardware delay', config.controller.hardwareDelay,
-    'before processNextSensor');//DEBUG
-  sensor.board.wait(config.controller.hardwareDelay, processNextSensor);
-  console.log(nowString(), 'schedule processing for next sensor in the queue');
+  if (waitingQueue.length > 0) {
+    console.log(nowString(), 'dequeue: queue processNextSensor@nextTick for',
+      waitingQueue[0].id);
+    process.nextTick(processNextSensor);
+  } else {
+    // Nothing left in the queue to process
+    console.log(nowString(), 'sensor queue is empty: going back to sleep');//trace
+    queueIsProcessing = false;
+  }
 }
-
 
 /**
  * Initialize the resources needed for logging information about the
@@ -94,10 +110,17 @@ initializeDataLogging = function () {
 // Helper functions just to improve the semantics in the main code
 
 function turnPumpOffAfter(pump, waitTime) {
-  pump.board.wait(waitTime, pump.off.bind(pump));// = copen() for Nomally Open
+  pump.board.wait(waitTime, pump.off.bind(pump));// = open() for Nomally Open
+}
+function turnPumpOnAfter(pump, waitTime) {
+  //process.nextTick(pump.on.bind(pump));// If waitTinme <= 0
+  pump.board.wait(waitTime, pump.on.bind(pump));// = close() for Nomally Open
 }
 function closeValveAfter(valve, waitTime) {
   valve.board.wait(waitTime, valve.close.bind(valve));// = on() for NClosed
+}
+function openValveAfter(valve, waitTime) {
+  valve.board.wait(waitTime, valve.open.bind(valve));// = off() for NClosed
 }
 function getBoolean() {
   /* jshint validthis: true */
@@ -215,14 +238,19 @@ checkSensor = function () {
     this.context.index);//trace
 
   // Make sure that the current sensor only gets queued once (per batch)
-  if (isQueuedSensor(this)) { return; }
+  if (isQueuedSensor(this)) {//ASSERT
+    console.log('Sensor', this.id, 'already queue: extra ignored');//DEBUG
+    return;
+  }
 
   waitingQueue.push(this);
 
-  if (waitingQueue.length === 1) {
-    // Queue was empty: start processing it (again)
+  if (!queueIsProcessing) {
+    // [re]start the queue processing
+    queueIsProcessing = true;
+    console.log(nowString(), 'checkSensor: queue processNextSensor@nextTick for',
+      waitingQueue[0].id);
     process.nextTick(processNextSensor);
-    console.log(nowString(), 'starting sensor queue processing');
   } else {//DEBUG
     console.log(nowString(), 'Current queue length:', waitingQueue.length);//DEBUG
   }
@@ -237,97 +265,72 @@ checkSensor = function () {
  */
 processNextSensor = function () {
   /* jshint validthis: false */
-  var controllingSensor, trace, startTime, offValue;
-  if (waitingQueue.length <= 0) {
-    // Nothing left to process
-    console.log(nowString(), 'sensor queue is empty: going back to sleep');//trace
+  var curSensor, snsBoard, trace, offValue, onValue,
+    baseTime, startTime, endTime, delayTime;
+
+  // Abort duplicate processing, if it manages to get started
+  if (sensorIsProcessing) {
+    console.log('\nDuplicate sensor processing detected: dropping duplicate\n');
     return;
   }
+  sensorIsProcessing = true;
+
 
   // Get the sensor from the head of the queue
-  controllingSensor = waitingQueue[0];
-  console.log(nowString(), 'process sensor "' + controllingSensor.id + '" on',
-    controllingSensor.board.id);//trace
+  curSensor = waitingQueue[0];
+  snsBoard = curSensor.board;
+  console.log(nowString(), 'process sensor "' + curSensor.id + '" on',
+    snsBoard.id);//trace
 
   // Always send an 'off' data point at the start of processing for a sensor.
   // That will be the only point logged, unless the sensor shows out of range.
-  trace = controllingSensor.context.index;
+  trace = curSensor.context.index;
   // console.log(nowString(), 'for trace', trace);//Debug
   offValue = config.controller.off[trace];
-  startTime = new Date();
-  dataLog.addTracePoint(trace, startTime, offValue);
+  onValue = config.controller.on[trace];
 
-  // if (controllingSensor.boolean)
-  if (controllingSensor.isInRange) {
+  if (curSensor.isInRange) {
     // In range: no processing needed for this sensor: remove it from the queue
-    dequeueSensor(controllingSensor);
+    console.log('in range dequeue check: current/head =', curSensor.id,
+      '/', waitingQueue[0].id);//DEBUG
+    startTime = new Date();
+    dataLog.addTracePoint(trace, startTime, offValue);
+    dequeueSensor(curSensor);
     return;
   }
 
   // Out of acceptable range; start the corrective action processing
   console.log(nowString(), 'start corrective action for',
-    controllingSensor.id);//trace
-  console.log(nowString(), 'hardware delay', config.controller.hardwareDelay,
-    'before primePump');//DEBUG
-  controllingSensor.board.wait(config.controller.hardwareDelay,
-    primePump.bind(controllingSensor, startTime));
-};
-
-primePump = function (startTime) {
-  /* jshint validthis: true */
-  var trace;
-  console.log(nowString(), 'start activateControl');
-  trace = this.context.index;
-
+    curSensor.id);//trace
   // Mark the trace to show when corrective action starts
-  dataLog.addTracePoint(trace, startTime, config.controller.on[trace]);
+  baseTime = new Date().valueOf();
+  delayTime = 0;// dequeueSensor is delayed enough not to need more here
+  turnPumpOnAfter(curSensor.context.pump, delayTime);
+  delayTime += config.controller.hardwareDelay;// 1 Second
 
-  this.context.pump.close();// turn the pump on
-  // open the value after a short delay
-  console.log(nowString(), 'hardware delay', config.controller.hardwareDelay,
-    'before controllingSensor');//DEBUG
-  this.board.wait(config.controller.hardwareDelay, activateControl.bind(this));
-};
+  startTime = baseTime + delayTime;
+  openValveAfter(curSensor.context.valve, delayTime);
+  delayTime += config.controller.flowTime;// 10 Seconds
 
-// Time sequenced callback chain: 'this' is the controlling sensor
-activateControl = function () {
-  /* jshint validthis: true */
-  console.log(nowString(), 'start activateControl');
-  this.context.valve.open();// Open the valve, start corrective processing
-  // Wait for awhile, and stop the corrective action
-  console.log(nowString(), 'flowTime', config.controller.flowTime,
-    'before endCorrection');//DEBUG
-  this.board.wait(config.controller.flowTime, endCorrection.bind(this));
-};
+  endTime = baseTime + delayTime;
+  closeValveAfter(curSensor.context.valve, delayTime);
+  delayTime += config.controller.hardwareDelay;// 1 Second
 
-endCorrection = function () {
-  /* jshint validthis: true */
-  console.log(nowString(), 'start endCorrection');
-  this.context.valve.close();// Close the value, end corrective processing
-  // turn off the pump after a short delay
-  console.log(nowString(), 'hardware delay', config.controller.hardwareDelay,
-    'before endPumping');//DEBUG
-  this.board.wait(config.controller.hardwareDelay, endPumping.bind(this));
-  // Exit this (callback) function, and continue with endPumping after delay
-};
+  turnPumpOffAfter(curSensor.context.pump, delayTime);
+  delayTime += config.controller.hardwareDelay;// 1 Second
 
-endPumping = function () {
-  /* jshint validthis: true */
-  console.log(nowString(), 'start endPumping');
-  var endTime, trace, onValue, offValue;
-  this.context.pump.open();// turn the pump off
-
-  // Mark the end of corrective processing on the trace
-  endTime = new Date();
-  trace = this.context.index;
-  onValue = config.controller.on[trace];
-  offValue = config.controller.off[trace];
+  // Should queue this data logging, so it does not run until (just) after
+  // dequue.  Or at least after turnPumpOff.  Safety so that any crash
+  // during datalogging can only occur while the valves and pump are off.
+  // Variant: send the first 2 points before starting the pump, so the trace
+  // will provide a (remote) clue that something locked up.
+  dataLog.addTracePoint(trace, startTime, offValue);
+  dataLog.addTracePoint(trace, startTime, onValue);
   dataLog.addTracePoint(trace, endTime, onValue);
   dataLog.addTracePoint(trace, endTime, offValue);
 
-  // Remove the (just) finished sensor from the queue
-  dequeueSensor(this);
-  // End of timed callback chain started from processNextSensor
+  // Remove the sensor from the queue AFTER processing is finished for it
+  snsBoard.wait(delayTime, dequeueSensor.bind(null, curSensor));
 };
 
 board = new five.Board();

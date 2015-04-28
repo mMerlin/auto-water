@@ -94,8 +94,10 @@ module.exports = {
     flowTime: 10000,  // time for out of range correction event (ms) - 10 seconds
     hardwareDelay: 1000, // minimum delay (ms) between slave hardware setting
                       // operations (that change power usage)
-    off: [0, 2, 4, 6, 8, 10],      // graph values per trace and state
-    on: [1, 3, 5, 7, 8, 11],
+    // off: [0, 2, 4, 6, 8, 10],      // graph values per trace and state
+    // on: [1, 3, 5, 7, 8, 11],
+    off: [0, 1, 2, 3, 4, 5, 6],
+    on: [0.9, 1.9, 2.9, 3.9, 4.9, 5.9],
     // Should have a 'momentum' factor somewhere: delay a second watering long
     // enough that the results of the first have reached the sensors
     pumpConfig: {
