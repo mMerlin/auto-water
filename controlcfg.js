@@ -1,14 +1,12 @@
 'use strict';
 
 function nowString() { return new Date().toISOString(); }
-var maxData = 200;      // number of data points displayed on a streaming graph
-var pumpPin = 8;        // single pin number to turn pump motor on and off
-// var heartbeatPin = 12;  // any available (otherwise unused) pin
-// var heartbeatPin = 'A5';  // digital pin number failed in new Sensor()
-// var heartRate = 30000;  // once every 30 seconds
+// var maxData = 200;      // number of data points displayed per trace
+var maxData = 40;       // number of data points displayed per trace
+var pumpPin = 5;        // single pin number to turn pump motor on and off
 var sensorReadRate = 120000;//milliseconds -- 2 minutes
-var sensorPins = ['A0', 'A1'];
-var valvePins = [1, 3];
+var sensorPins = ['A0', 'A1', 'A2', 'A3', 'A4', 'A5'];
+var valvePins = [8, 9, 10, 11, 2, 3, 4];
 
 // Template for a trace to associate with a (Plotly) plot
 var dataTemplate = {
@@ -93,24 +91,18 @@ function valveConfig(index) {
 module.exports = {
   controller: {
     tooDryValue: 700, // Greater than this is OK
-    flowtime: 10000,  // time for out of range correction event (ms) - 10 seconds
+    flowTime: 10000,  // time for out of range correction event (ms) - 10 seconds
     hardwareDelay: 1000, // minimum delay (ms) between slave hardware setting
                       // operations (that change power usage)
-    off: [0, 2],      // graph values per trace and state
-    on: [1, 3],
+    off: [0, 2, 4, 6, 8, 10],      // graph values per trace and state
+    on: [1, 3, 5, 7, 8, 11],
     // Should have a 'momentum' factor somewhere: delay a second watering long
     // enough that the results of the first have reached the sensors
     pumpConfig: {
       pin: pumpPin,
       type: "NO",     //Normally Open contacts: engerize to turn on
       id: "Water Pump"
-    },
-    heartRate: 30000  // once every 30 seconds
-    // heartbeatConfig: {
-    //   pin: heartbeatPin,
-    //   freq: heartRate,
-    //   id: "Heart Beat"
-    // }
+    }
   },
   plotly: {
     graphOptions: {
@@ -123,11 +115,7 @@ module.exports = {
       yaxis: {
         title: 'On/Off'
       }
-    },
-    messages: {
-      multipleStreams: 'All Streams Go!'
-    },
-    throttleTime: 100 //milliseconds
+    }
   },
   buildPlotData: buildPlotData,
   sensorConfig: sensorConfig,

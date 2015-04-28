@@ -1,306 +1,149 @@
 'use strict';
 
+// predeclare variables to hold functions, to avoid used before declared issues
+var initializeDataLogging, initializeMonitoring, checkSensor, processNextSensor,
+  primePump, activateControl, endCorrection, endPumping;
+
 // Collect the needed external pieces
 var five = require('johnny-five');
-var Plotly = require('plotly');
-var user = require('./.private/userinfo.js');
 var config = require('./controlcfg.js');
+var dataLog = require('./lib/plotlyLogging.js');
 
 // file/module scope variables
-var board, plotly, waitingQueue;
-var counter;//DEBUG
-function nowString() { return new Date().toISOString(); }
+var board, waitingQueue;
+function nowString() { return new Date().toISOString(); }//DEBUG
 console.log(nowString(), 'modules loaded:');//trace
 
+// IDEA: The queue could potentially cover sensors across multiple boards
+// potentially with multiple pumps, potentially with the pump, sensor, and valve
+// all on different boards.
+// Think about managing hardware activation delays across boards: should delays
+// apply only within a single board, or is this (partly) a power concern accorss
+// the whole system?
 waitingQueue = [];
-counter = 0;//DEBUG
 
 
-///////////////////////
-// Utility functions //
-///////////////////////
-
-// Only needs refresh twice a year, to handle daylight savings time changes
-var tzOffset = new Date().getTimezoneOffset() * 60000;// milliseconds from GMT
-/***
- * get a time value for the local (server) timezone
+/**
+ * Check to see if a specific sensor is already in the 'waiting to process'
+ * queue.
  *
- * @return {unsigned long}
+ * Uses module scope {Array} waitingQueue for input
+ *
+ * no 'this' parameter for run context
+ *
+ * @param {Sensor} controlSensor      Process controlling sensor instance
+ * @return {boolean}
  */
-function localDate() {
-  return new Date() - tzOffset;
-}// ./function localDate()
-
-/***
- * Create a formatted (for plotly) date string from the current local time
- *
- * @param {data type} parmeter name parameter description
- * @return {string}
- */
-function getDateString() {
-  return new Date(localDate()).toISOString().replace('T', ' ').substr(0, 23);
-}// ./function getDateString()
-
-/***
- * emulate Arduino delay function
- *
- * Full blocking 'busy' wait
- * NOTE: if the delay value starts approaching the heartbeat rate, this will
- * need to be change to send heartbeats while waiting.
- *
- * @param {unsigned lone} millis milliseconds to wait
- * @return {undefined}
- */
-function delay(millis) {
-  var date, curDate;
-  date = new Date();
-  curDate = null;
-  do {
-    curDate = new Date();
-  } while (curDate - date < millis);
-}// ./function delay(millis)
-
-
-//////////////////////////////////////////////////////////////
-// helper functions for the many event processing functions //
-//////////////////////////////////////////////////////////////
-
-/***
- * Set the whole system state to 'all off'
- *
- * @param {Array of Object} sensors  The sensors that have the control objects
- * @return {undefined}
- */
-function allClosedOff(sensors) {
-  var i;
-  for (i = 0; i < sensors.length; i += 1) {
-    sensors[i].context.valve.close();
-    delay(config.controller.hardwareDelay);// Wait before closing next solenoid
+function isQueuedSensor(sensor) {
+  /* jshint validthis: false */
+  var i, queueLen, j;//DEBUG j
+  queueLen = waitingQueue.length;// ASSERT
+  for (i = 0; i < queueLen; i += 1) {// ASSERT
+    if (sensor === waitingQueue[i]) {// directly compare object instances
+      console.log('Duplicate sensor processing detected; ignoring second');//trace
+      console.log('Currently Queued:');//DEBUG
+      for (j = 0; j < queueLen; j += 1) {//DEBUG
+        console.log(waitingQueue[j].id, 'on', waitingQueue[j].board.id,
+          'for trace', waitingQueue[j].context.index);//DEBUG
+      }//DEBUG
+      console.log('duplicate', sensor.id, 'for trace',
+        sensor.context.index);//DEBUG
+      return true;// This sensor is already already in the list to be processed
+    }
   }
+  return false;
+}
 
-  sensors[0].context.pump.open();// Pump off when relay is open
-  delay(config.controller.hardwareDelay);// Wait before next (possible) change
-}// ./function allClosedOff()
-
-/***
- * Activate the controls to bring the conditions back to the 'good' range.
- *
- * @param {object} sensor    Sensor object with linked controls
- * @return {undefined}
- */
-function correctConditions(sensor) {
-  sensor.context.valve.open();// Open the valve
-  delay(config.controller.hardwareDelay);
-  sensor.context.pump.close();// turn the pump on
-
-  delay(config.controller.flowTime);// Wait for some water to flow
-
-  sensor.context.valve.close();// Close the valve
-  delay(config.controller.hardwareDelay);
-  sensor.context.pump.open();// turn the pump off
-  delay(config.controller.hardwareDelay);
-}// ./function correctConditions(sensor)
-
-/***
- * Send a single data point to the stream configured for a control set
- *
- * @param {object} sensor     controlling sensor information
- * @param {array} state       The trace values for the state
- * @param {string} time       The time value for the data point
- * @return {object}
- */
-function sendTracePoint(sensor, state, time) {
-  var data = {
-    x: time,
-    y: state[sensor.context.index]
-  };
-  sensor.context.stream.write(JSON.stringify(data) + '\n');
-  // Make sure do not get multiple points sent too close together.  Probably
-  // not needed, since documentation says there is some buffering.  Should never
-  // be more than 4 data points in close succesion, and the (plotly server)
-  // buffer should be able to handle that much.
-  delay(config.plotly.throttleTime);
-  //consoleLogger(counter, set.index, data);//Debug (single refernce)
-  return data;
-}// ./function sendTracePoint(sensor, state, time)
-
-
-////////////////////////////////////////////////////////////////////////////
-// The callback functions that do the actual work of reading the sensors, //
-// contolling the pump and valves, logging events to plotly traces        //
-////////////////////////////////////////////////////////////////////////////
-
-/***
- * Send heart beat / keep alive signal to each plotly stream
- *
- * @return {undefined}
- */
-function doHeartbeat() {
+function dequeueSensor(sensor) {
   /* jshint validthis: true */
-  var i, nTraces;
-  console.log(nowString(), 'heartbeat');//trace
-  nTraces = this.length;
-  // console.log('match traces count:',//DEBUG
-  //   config.controller.nTraces === nTraces
-  //   );//Debug
-  for (i = 0; i < nTraces; i += 1) {
-    this[i].context.stream.write('\n');
-    // data point throttling is for json.  No JSON here, so should not need to
-    // insert any artificial delay.
-  }
-}// .//function doHeartbeat
-
-/***
- * Do any sensor value based processing.
- *
- * callback function for repeating (timed) sensor reads
- * Water area when sensor shows it to be too dry
- *
- * Stream data to plotly, logging watering events
- *
- * @return {undefined}
- */
-function controlMoisture() {
-  /* jshint validthis: true */
-  var data;
-  console.log(nowString(), 'controlMoisture for', this.id);//trace
-
-  // NOTE: current testing says queueing is not really needed.  Despite the event
-  // 'model' being used, all events are sequential: processing of a received
-  // event completes before the next callback is started, though they were
-  // 'triggered' at the same time.
-  // Guessing that the library is walking a loop, and doing 'callback' when
-  // conditions match.  The callback function has to return before the next
-  // event can get checked for.
-  waitingQueue.push(this.id);
-  if (waitingQueue.length !== 1) {//DEBUG
-    console.log(nowString(), 'Current queue length:', waitingQueue.length);//DEBUG
+  var first = waitingQueue.shift();
+  if (first !== sensor) {// directly compare object instances
+    console.log('Logic error: current process was for trace', sensor.id,
+      'but queue said', first.id);//DEBUG
+    //'on ', sensor.board.id,
   }//DEBUG
-  while (waitingQueue[0] !== this.id) {
-    // Some other sensor is processing
-    delay(config.controller.flowTime);
-    console.log(nowString(), 'delayed checking for', this.id);//trace
-  }
 
-  // Always send an 'off' data point at the start of processing.  That will be
-  // the only point logged, unless watering is needed.
-  data = sendTracePoint(this, config.controller.off, getDateString());
-  if (this.boolean === false) {
-    // Too Dry
-    // Mark the trace to show when the watering starts and stops
-    data = sendTracePoint(this, config.controller.on, data.x);
-    correctConditions(this);
-    data = sendTracePoint(this, config.controller.on, getDateString());
-    data = sendTracePoint(this, config.controller.off, data.x);
-  }
-
-  // Close valves and turn pump off
-  // redundant, because the valves should already be closed and pump off
-  allClosedOff(this.board.traceSensors);
-
-  counter += 1;//DEBUG
-  // Remove (just) finished index from the queue
-  data = waitingQueue.shift();
-  if (data !== this.id) {
-    console.log('Logic error: current process was for', this.id,
-      'but queue said', data);
-  }
-}// ./function controlMoisture()
+  console.log(nowString(), 'hardware delay', config.controller.hardwareDelay,
+    'before processNextSensor');//DEBUG
+  sensor.board.wait(config.controller.hardwareDelay, processNextSensor);
+  console.log(nowString(), 'schedule processing for next sensor in the queue');
+}
 
 
-///////////////////////////////////////
-// configuration and setup functions //
-///////////////////////////////////////
-
-/***
- * Handle cleanup when a plotly stream is closed.
+/**
+ * Initialize the resources needed for logging information about the
+ * control events.
  *
- * callback function when stream is created.  Current processing logic never
- * triggers this callback.  Seems to need the stream to be explicitly closed.
+ * Callback function, executed when the slaved board is ready.
+ * IDEA: need to rethink call chain if have multiple boards
  *
- * @param {object} err      error object
- * @param {object} res      response object
+ * 'this' === board
+ *
  * @return {undefined}
  */
-function streamFinished(err, res) {
+initializeDataLogging = function () {
   /* jshint validthis: true */
-  if (err) {
-    console.log('streaming failed:');
-    console.log(err);
-    process.exit();
-  }
-  console.log('streamed response:', res);
-  console.log(this);// Explore the callback context//DEBUG
-}// ./function streamFinished(err, res)
+  console.log(nowString(), 'start initializeDataLogging');//trace
 
-/***
- * Check and report the information supplied to the callback function when
- * a streaming plot configuration was reqested
- *
- * @param {Object} err      error object
- * @param {Object} msg      successful plot creation details
- * @return {undefined}
- */
-function verifyPlotInitialization(err, msg) {
-  console.log(nowString(), 'start verifyPlotInitialization');//trace
-  if (err) {
-    // Just report the problem and exit, could not initialize plotly
-    console.log('Failed to initialize Plotly plot');//report
-    console.log(err);//report
-    process.exit();
-    return;
-  }
+  // The control board is ready.  Setup the remote logging object.
 
-  // Plot initialization succeeded.
-  // console.log(nowString(), 'Msg:', msg);//DEBUG
-  if (msg.streamstatus !== config.plotly.messages.multipleStreams) {
-    console.log('Unexpected graph stream status.');//report
-    console.log('Are there really multiple traces configured?');//report
-    console.log('Expected:', config.plotly.messages.multipleStreams);//report
-    console.log('Actual:  ', msg.streamstatus);//report
-    process.exit();
-  }
-  console.log('\nPlot being created at:', msg.url, '\n');//report
-}// ./function verifyPlotInitialization(err, msg)
+  dataLog.init(initializeMonitoring);
+  console.log(nowString(), 'data logging configured');//trace
+};// ./function initializeDataLogging()
 
-/***
+// Helper functions just to improve the semantics in the main code
+
+function turnPumpOffAfter(pump, waitTime) {
+  pump.board.wait(waitTime, pump.off.bind(pump));// = copen() for Nomally Open
+}
+function closeValveAfter(valve, waitTime) {
+  valve.board.wait(waitTime, valve.close.bind(valve));// = on() for NClosed
+}
+function getBoolean() {
+  /* jshint validthis: true */
+  return this.boolean;
+}
+
+/**
  * Link devices on the slaved controller with the processing methods
  *
  * Callback function, executed when the plot used for logging has finished
  * initialization
  *
+ * no 'this' context
+ *
  * @param {Object} err      error object
  * @param {Object} msg      successful plot creation details
  * @return {undefined}
  */
-function initializeLocal(err, msg) {
+initializeMonitoring = function (err, msg) {
   /* jshint validthis: false */
-  var pump, trace, mSns;
-  console.log(nowString(), 'start initializeLocal');//trace
-  // console.log('this:', this);//undefined//DEBUG
-  verifyPlotInitialization(err, msg);
+  console.log(nowString(), 'start initializeMonitoring');//trace
+  var pump, trace, mSns, initDelay;
+  initDelay = 0;
 
-  // Streaming plot ready to attach trace streams to.
+  // Function arguments are from the initialization of the dataLog (callback).
+  // Let it do any needed verification.
+  if (!dataLog.verifyInitialization(err, msg)) {
+    console.log('remote initialization failed');//report
+    process.exit();
+  }
+
+  // logging system is ready to attach trace streams to.
 
   // initialize the pump: used with any/all of the control valves
   // This is a motor, but without any direction or speed control.  It can only
-  // be turned on and off.  A Relay give about the right control semantics.
+  // be turned on and off.  A Relay gives about the right control semantics.
   // console.log('pump config:', config.controller.pumpConfig);//DEBUG
   pump = new five.Relay(config.controller.pumpConfig);
   console.log(nowString(), 'pump initialized');//trace
+  initDelay += config.controller.hardwareDelay;
+  // board.wait(initDelay, runFunction.bind(pump, 'open', "stop pump"));
+  // board.wait(initDelay, pump.close.bind(pump));
+  turnPumpOffAfter(pump, initDelay);
   // console.log(pump.board.id);//DEBUG
   // pump (and all johnny-five device instances) contain a board property that
   // references the board instance that are created for.
-  // console.log('Pump instance', pump);//DEBUG
-
-  // initialize a dummy input, and use (sensor) reads on it to trigger a
-  // heartbeat for the streaming data.
-  // console.log(nowString(), 'heart config',
-  //   config.controller.heartbeatConfig
-  //   );//DEBUG
-  // heartbeat = new five.Sensor(config.controller.heartbeatConfig);
-  // heartbeat.sensors = [];
-  board.traceSensors = [];
 
   // Each trace is associated with a valve, which is opened and closed based on
   // sensor readings.  One sensor per valve.  Link the pieces up, so that the
@@ -308,87 +151,188 @@ function initializeLocal(err, msg) {
   // hardware and data logging channels.
   for (trace = 0; trace < config.controller.nTraces; trace += 1) {
     mSns = new five.Sensor(config.sensorConfig(trace));
-    //console.log(nowString(), 'sensor[' + trace + ']', mSns);//DEBUG
-    // console.log(nowString(), 'booleanAt', mSns.booleanAt);//Debug
-    // console.log(nowString(), 'barrier', mSns.booleanBarrier);//undefined//Debug
+    // Setup a limit, for direct out of range boolean checks
     mSns.booleanAt(config.controller.tooDryValue);
-    // console.log(nowString(), 'barrier', mSns.booleanBarrier);//undefined//Debug
-    // console.log(nowString(), 'boolean', mSns.boolean);//Debug
+    // No going to full inheritance of Sensor, but adding an alias to the local
+    // instances, to provide better semantics.
+    Object.defineProperties(mSns, {
+      isInRange: {
+        get: getBoolean
+      }
+    });
     // Add information to the context for the sensor that will provide access to
-    // the objected need when processing the sensor data.
+    // the objects need when processing the sensor data.
+    //   - the trace number
     //   - control for the valve
     //   - control for the pump motor
-    //   - stream for the graphical event logging
-    //   - the trace number
-    //   - heartbeat (to indirectly access other sensor trace streams)
+    // console.log(config.valveConfig(trace));//DEBUG
     mSns.context = {
       index: trace,
       pump: pump,
-      valve: new five.Relay(config.valveConfig(trace)),
-      stream: plotly.stream(user.tokens[trace], streamFinished)//,
-      // heartbeat: heartbeat
+      valve: new five.Relay(config.valveConfig(trace))
     };
-    // Add the sensor the heart beat processing list
-    board.traceSensors.push(mSns);
+    initDelay += config.controller.hardwareDelay;
+    // board.wait(initDelay, runFunction.bind(mSns.context.valve, 'close',
+    //   'close valve ' + trace));
+    closeValveAfter(mSns.context.valve, initDelay);
+    // console.log(mSns.context.valve);//DEBUG
+    dataLog.newTrace(trace);
 
-    // Setup a function to read and process sensor data regularly
-    mSns.on('data', controlMoisture);
+    // Schedule callbacks to regularly process data for this sensor
+    mSns.on('data', checkSensor.bind(mSns));
+    // mSns.on('data', checkSensor.bind(mSns));//DEBUG deliberate duplicate
   }
 
-  // pump.board.repl.inject({pump: pump});//DEBUG
-  // pump.board.repl.inject({sensor1: mSns});//DEBUG
-  board.loop(config.controller.heartRate, doHeartbeat.bind(board.traceSensors));
-  // heartbeat.on('data', doHeartbeat);
-  console.log(nowString(), 'heartbeat processing intialized\n');//trace
+  // All traces used for data logging have been created.  Let the logging
+  // system know to start processing them.
+  dataLog.startTraces(pump.board);
 
   // All further processing for the application is going to be done in the
   // callbacks for the just configure sensor reads
-  console.log(nowString(), 'all setup done: start processing via callbacks\n');
-}// ./function initializeLocal(err, msg)
+  console.log(nowString(),
+    '\nall setup done: start processing via sensor data event callbacks\n'
+    );//trace
+};// ./function initializeMonitoring(err, msg)
 
-/***
- * Initialize the remote resources needed for logging inforamtion about the
- * control events.
+
+////////////////////////////////////////////////////////////////////////////
+// The callback functions that do the actual work of reading the sensors, //
+// contolling the pump and valves, logging events                         //
+////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Add the sensor to the queue to be processed now/soon
  *
- * Callback function, executed when the slaved board is ready.  This is called
- * in the (this) context of the board instance.  That instance has been
- * populated with a lot of extra information, both generic and specific to the
- * slaved board.
+ * 'data' event handler for sensors
+ *
+ * 'this' is one of the process controlling sensor instances
  *
  * @return {undefined}
  */
-function initializeRemote() {
+checkSensor = function () {
   /* jshint validthis: true */
-  console.log(nowString(), 'start initializeRemote');//trace
-  // console.log(this === board);//true//DEBUG
-  // console.log('this:', this);//DEBUG
+  console.log(nowString(), 'start checkSensor for', this.id, 'trace',
+    this.context.index);//trace
 
-  // The control board is ready.  Setup the remote logging object.
+  // Make sure that the current sensor only gets queued once (per batch)
+  if (isQueuedSensor(this)) { return; }
 
-  // var data = config.buildPlotData(user.tokens);//DEBUG
-  // console.log(nowString(), 'plot data:', data);//DEBUG
-  // console.log(nowString(), 'plot options:', config.plotly.graphOptions);//DEBUG
-  plotly.plot(
-    config.buildPlotData(user.tokens),
-    config.plotly.graphOptions,
-    initializeLocal
-  );
-  console.log(nowString(), 'plotly callback configured');//trace
-}// ./function initializeRemote()
+  waitingQueue.push(this);
 
+  if (waitingQueue.length === 1) {
+    // Queue was empty: start processing it (again)
+    process.nextTick(processNextSensor);
+    console.log(nowString(), 'starting sensor queue processing');
+  } else {//DEBUG
+    console.log(nowString(), 'Current queue length:', waitingQueue.length);//DEBUG
+  }
+};// ./function checkSensor()
 
-// console.log('Five:', five);//DEBUG
-// console.log('Plotly constructor:', Plotly);//DEBUG
-// console.log('User:', user);//DEBUG
+/***
+ * Start processing for sensor at the top/head of the queue
+ *
+ * no 'this' context
+ *
+ * @return {undefined}
+ */
+processNextSensor = function () {
+  /* jshint validthis: false */
+  var controllingSensor, trace, startTime, offValue;
+  if (waitingQueue.length <= 0) {
+    // Nothing left to process
+    console.log(nowString(), 'sensor queue is empty: going back to sleep');//trace
+    return;
+  }
 
-plotly = new Plotly(user.userName, user.apiKey);
+  // Get the sensor from the head of the queue
+  controllingSensor = waitingQueue[0];
+  console.log(nowString(), 'process sensor "' + controllingSensor.id + '" on',
+    controllingSensor.board.id);//trace
+
+  // Always send an 'off' data point at the start of processing for a sensor.
+  // That will be the only point logged, unless the sensor shows out of range.
+  trace = controllingSensor.context.index;
+  // console.log(nowString(), 'for trace', trace);//Debug
+  offValue = config.controller.off[trace];
+  startTime = new Date();
+  dataLog.addTracePoint(trace, startTime, offValue);
+
+  // if (controllingSensor.boolean)
+  if (controllingSensor.isInRange) {
+    // In range: no processing needed for this sensor: remove it from the queue
+    dequeueSensor(controllingSensor);
+    return;
+  }
+
+  // Out of acceptable range; start the corrective action processing
+  console.log(nowString(), 'start corrective action for',
+    controllingSensor.id);//trace
+  console.log(nowString(), 'hardware delay', config.controller.hardwareDelay,
+    'before primePump');//DEBUG
+  controllingSensor.board.wait(config.controller.hardwareDelay,
+    primePump.bind(controllingSensor, startTime));
+};
+
+primePump = function (startTime) {
+  /* jshint validthis: true */
+  var trace;
+  console.log(nowString(), 'start activateControl');
+  trace = this.context.index;
+
+  // Mark the trace to show when corrective action starts
+  dataLog.addTracePoint(trace, startTime, config.controller.on[trace]);
+
+  this.context.pump.close();// turn the pump on
+  // open the value after a short delay
+  console.log(nowString(), 'hardware delay', config.controller.hardwareDelay,
+    'before controllingSensor');//DEBUG
+  this.board.wait(config.controller.hardwareDelay, activateControl.bind(this));
+};
+
+// Time sequenced callback chain: 'this' is the controlling sensor
+activateControl = function () {
+  /* jshint validthis: true */
+  console.log(nowString(), 'start activateControl');
+  this.context.valve.open();// Open the valve, start corrective processing
+  // Wait for awhile, and stop the corrective action
+  console.log(nowString(), 'flowTime', config.controller.flowTime,
+    'before endCorrection');//DEBUG
+  this.board.wait(config.controller.flowTime, endCorrection.bind(this));
+};
+
+endCorrection = function () {
+  /* jshint validthis: true */
+  console.log(nowString(), 'start endCorrection');
+  this.context.valve.close();// Close the value, end corrective processing
+  // turn off the pump after a short delay
+  console.log(nowString(), 'hardware delay', config.controller.hardwareDelay,
+    'before endPumping');//DEBUG
+  this.board.wait(config.controller.hardwareDelay, endPumping.bind(this));
+  // Exit this (callback) function, and continue with endPumping after delay
+};
+
+endPumping = function () {
+  /* jshint validthis: true */
+  console.log(nowString(), 'start endPumping');
+  var endTime, trace, onValue, offValue;
+  this.context.pump.open();// turn the pump off
+
+  // Mark the end of corrective processing on the trace
+  endTime = new Date();
+  trace = this.context.index;
+  onValue = config.controller.on[trace];
+  offValue = config.controller.off[trace];
+  dataLog.addTracePoint(trace, endTime, onValue);
+  dataLog.addTracePoint(trace, endTime, offValue);
+
+  // Remove the (just) finished sensor from the queue
+  dequeueSensor(this);
+  // End of timed callback chain started from processNextSensor
+};
+
 board = new five.Board();
 board.id = 'Water Controller board';
 board.repl = false;
-// console.log('Plotly instance:', plotly);//DEBUG
-// console.log('User:', user);//DEBUG
-// console.log('Config:', config);//DEBUG
-// console.log('Board:', board);//DEBUG
 
-board.on('ready', initializeRemote);
+board.on('ready', initializeDataLogging);
 console.log(nowString(), 'board ready callback configured');//trace
