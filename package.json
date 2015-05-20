@@ -1,34 +1,47 @@
 {
   "name": "auto-water",
-  "version": "0.0.2",
   "description":
     "Use moisture sensor data to control an automatic watering system",
-  "main": "watering.js",
-  "repository" : {
+  "version": "0.0.2-1",
+  "homepage": "https://github.com/mMerlin/auto-water",
+  "author": {
+    "name": "H. Phil Duby"
+  },
+  "repository": {
     "type": "git",
     "url": "https://github.com/mMerlin/auto-water.git"
   },
-  "keywords": [
-    "control",
-    "sensor",
-    "Arduino",
-    "firmata",
-    "hardware"
-  ],
-  "author": "Phil Duby",
-  "license": "MIT",
   "bugs": {
     "url": "https://github.com/mMerlin/auto-water/issues"
   },
-  "homepage": "https://github.com/mMerlin/auto-water/",
-  "dependencies": {
-    "johnny-five": "^0.8.58",
-    "plotly": "^1.0.2"
+  "licenses": [
+    {
+      "type": "MIT",
+      "url": "https://github.com/mMerlin/auto-water/blob/master/LICENSE"
+    }
+  ],
+  "main": "index",
+  "engines": {
+    "node": "*"
   },
-  "devDependencies": {},
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "grunt nodeunit"
   },
-  "engines": { "node": "*" },
+  "dependencies": {
+    "johnny-five": "rwaldron/johnny-five",
+    "johnny-load": "mMerlin/johnny-load",
+    "plotly": "latest"
+  },
+  "devDependencies": {
+    "grunt": "latest",
+    "grunt-contrib-jshint": "latest",
+    "grunt-contrib-nodeunit": "latest",
+    "grunt-contrib-watch": "latest",
+    "grunt-jslint": "latest",
+    "board-io": "latest"
+  },
+  "keywords": [
+    "control", "sensor", "Arduino", "firmata", "hardware", "johnny-five",
+    "plotly", "chart", "graph", "plant watering" ],
   "contributors": []
 }
