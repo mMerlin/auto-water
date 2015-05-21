@@ -72,7 +72,7 @@ exports['configuration'] = {
     /* jshint maxstatements: 40 */
     var cfg, obj, properties, pin;
     cfg = isNonNullObject(userConfig) && isNonNullObject(userConfig.process) ? userConfig.process : {};
-    test.expect(24);
+    test.expect(22);
 
     test.ok(isNonNullObject(userConfig), 'user info should export an object');
     test.ok(isNonNullObject(userConfig.process), 'should have process property object');
@@ -84,8 +84,6 @@ exports['configuration'] = {
     // will only start when a new reading is taken.
 
     test.strictEqual(typeof cfg.dryLimit, 'number', 'should have numeric dryLimit property');
-    test.strictEqual(typeof cfg.beginningOfTime, 'number',
-      'should have numeric beginningOfTime property');
 
     // maximum for pump (and other) pin numbers varies by board used
     test.ok(isNonNullObject(cfg.pump), 'should have pump property object');
@@ -112,7 +110,6 @@ exports['configuration'] = {
       'time between corrections should be greater sensorPeriod');
     test.ok(cfg.dryLimit >= 0 && cfg.dryLimit <= 1023,
       'sensor threshold mush be between 0 and 1023');
-    test.ok(cfg.beginningOfTime < Date.now(), 'beginning of time must be in the past');
     test.ok(cfg.pumpWarmup >= 0, 'warmup time must not be negative');
     test.ok(cfg.pumpCooldown >= 0, 'cooldown time must not be negative');
     test.ok(cfg.flowTime > 0, 'correction flow time must be greater than zero');

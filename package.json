@@ -2,7 +2,7 @@
   "name": "auto-water",
   "description":
     "Use moisture sensor data to control an automatic watering system",
-  "version": "0.0.2-2",
+  "version": "0.0.2-3",
   "homepage": "https://github.com/mMerlin/auto-water",
   "author": {
     "name": "H. Phil Duby"
@@ -26,6 +26,10 @@
   },
   "scripts": {
     "test": "grunt nodeunit"
+  },
+  "directories": {
+    "doc": "./doc",
+    "examples": "./examples"
   },
   "dependencies": {
     "johnny-five": "rwaldron/johnny-five",

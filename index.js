@@ -32,7 +32,7 @@ block.baseSensorSet = {
     options: {
       freq: config.sensorPeriod
     },
-    lastProcessed: config.beginningOfTime,
+    lastProcessed: block.lastCmdTime,
     usage: "measurement",
     setup: { booleanAt: config.dryLimit },
     children: {
@@ -44,7 +44,7 @@ block.baseSensorSet = {
         children: {
           include: "pressure pump"
         },
-        lastProcessed: config.beginningOfTime,
+        lastProcessed: block.lastCmdTime,
         usage: "correction",
         setup: "off",
         adjustTime: config.flowTime,
@@ -60,7 +60,7 @@ modelDescription = {
       type: "NO"
     },
     label: "pressure pump",
-    lastProcessed: config.beginningOfTime,
+    lastProcessed: block.lastCmdTime,
     usage: "pressurize",
     setup: "off",
     warmup: config.pumpWarmup,
