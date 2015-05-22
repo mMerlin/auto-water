@@ -1,4 +1,4 @@
-**Datalogging API**
+#Datalogging API#
 
 The datalogging api used for the auto-water application is 4 methods exposed (exported) by the datalogging module.
 

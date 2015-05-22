@@ -1,8 +1,8 @@
-*PlotlyLogging configuration*
+#PlotlyLogging configuration#
 The plotlyLogging package logs data to one or more plot.ly plots (filenames), with one or more traces for each plot.&nbsp; When multple plots are configured, each plot can be on the same or different
 plot.ly account (userName + apiKey)
 
-**userinfo.js, module.exports.{property}**
+##userinfo.js, module.exports.{property}##
 
 The process property is an object (structure) that contains information about the hardware setup, and processing.
 
@@ -10,7 +10,7 @@ The logging property is an object that contains the settings for the datalogging
 
 The logging.plotlyLogging property is an object that contains information about the plot.ly plot(s) (filenames) that will be used, and the processing events that are to be recorded to those plot(s).
 
-***Structure overview***
+###Structure overview###
 * module.exports.logging.plotlyLogging {}
   * target {}
   * trace {}
@@ -35,7 +35,7 @@ The logging.plotlyLogging property is an object that contains information about 
           * component
           * transform
 
-***Descriptions and Expansions***
+###Descriptions and Expansions###
 * target</br>
   plotlyLogging.target is an optional template object.&nbsp; It is really only useful when multiple plots are being configured with common information.&nbsp; When a single plot is being configured, plotArrayElement.target is a better choice.&nbsp; plotArrayElement.target is a required object, unless all required properties are provided by plotlyLogging.target properties.
 * trace</br>
