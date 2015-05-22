@@ -68,6 +68,25 @@ modelDescription = {
   }
 };
 
+// Add a function to the Array prototype, if it does not already exist
+if (!Array.prototype.includes) {
+  /* jshint freeze: false */
+  /**
+   * Check if a value is an element of the current array
+   *
+   * @param {object} val        exact object/primative datatype to look for
+   * @return {boolean}
+   */
+  Array.prototype.includes = function (val) {
+    var i;
+    for (i = 0; i < this.length; i += 1) {
+      if (this[i] === val) { return true; }
+    }
+    return false;
+  };// ./function Array.prototype.includes(val)
+  /* jshint freeze: true */
+}// ./if (!Array.prototype.includes)
+
 /**
  * Add a new sensor to the model description, as a clone of the base sensor,
  * filling information from configuration file
@@ -90,6 +109,15 @@ function cloneSensor(pinArray, sensorNum) {
   properties = Object.keys(pinArray[1]);
   newSensor.children.valve.options.pin = properties[0];
   newSensor.children.valve.options.id = pinArray[1][properties[0]];
+  if (block.pins.includes(newSensor.options.pin)) {
+    throw new Error('Pin ' + newSensor.options.pin +
+      ' referenced for more than one component');
+  }
+  if (block.ids.includes(newSensor.options.id)) {
+    throw new Error('Component id "' + newSensor.options.id + '" is not unique');
+  }
+  block.ids.push(newSensor.options.id);
+  block.pins.push(newSensor.options.pin);
 
   this['sensor' + sensorNum] = newSensor;
 }
@@ -174,6 +202,10 @@ function boardIsReady() {
   properties = Object.keys(config.pump);
   modelDescription.pump.options.pin = properties[0];
   modelDescription.pump.options.id = config.pump[properties[0]];
+  block.pins = [];// If multiple boards, this needs to be unique for each board
+  block.pins.push(modelDescription.pump.options.pin);
+  block.ids = [];// This needs to be unique across all boards
+  block.ids.push(modelDescription.pump.options.id);
 
   // Populate the model with sensor sets based on the user supplied information
   config.sensorPinSet.forEach(cloneSensor, modelDescription);
@@ -181,7 +213,7 @@ function boardIsReady() {
   this.children = jLoad(modelDescription, this);
 
   // Initialize the datalogging module, and give it a callback to use when done
-  datalog.init(block.addComponentHandlers.bind(this));
+  datalog.init(block.addComponentHandlers.bind(this), block.ids);
   datalog.addBoard(this);
 }
 

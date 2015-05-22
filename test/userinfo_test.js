@@ -212,7 +212,7 @@ exports['configuration'] = {
     test.strictEqual(typeof logger.addSensor, 'function', 'datalogging module should provide an addSensor method');
     test.strictEqual(typeof logger.addBoard, 'function', 'datalogging module should provide an addBoard method');
     test.strictEqual(typeof logger.finalize, 'function', 'datalogging module should provide a finalize method');
-    test.strictEqual(logger.init.length, 1, 'datalogging init method should accept 1 argument');
+    test.strictEqual(logger.init.length, 2, 'datalogging init method should accept 2 arguments');
     test.strictEqual(logger.addSensor.length, 1, 'datalogging addSensor method should accept 1 argument');
     test.strictEqual(logger.addBoard.length, 1, 'datalogging addBoard method should accept 1 argument');
     test.strictEqual(logger.finalize.length, 0, 'datalogging finalize method should accept 0 arguments');
