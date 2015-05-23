@@ -109,6 +109,7 @@ function cloneSensor(pinArray, sensorNum) {
   properties = Object.keys(pinArray[1]);
   newSensor.children.valve.options.pin = properties[0];
   newSensor.children.valve.options.id = pinArray[1][properties[0]];
+
   if (block.pins.includes(newSensor.options.pin)) {
     throw new Error('Pin ' + newSensor.options.pin +
       ' referenced for more than one component');
@@ -118,6 +119,18 @@ function cloneSensor(pinArray, sensorNum) {
   }
   block.ids.push(newSensor.options.id);
   block.pins.push(newSensor.options.pin);
+
+  if (block.pins.includes(newSensor.children.valve.options.pin)) {
+    throw new Error('Pin ' + newSensor.children.valve.options.pin +
+      ' referenced for more than one component');
+  }
+  if (block.ids.includes(newSensor.children.valve.options.id)) {
+    throw new Error('Component id "' + newSensor.children.valve.options.id +
+      '" is not unique');
+  }
+  block.ids.push(newSensor.children.valve.options.id);
+  block.pins.push(newSensor.children.valve.options.pin);
+
 
   this['sensor' + sensorNum] = newSensor;
 }
