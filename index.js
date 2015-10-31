@@ -7,17 +7,18 @@
  */
 
 'use strict';
-var events, five, jLoad, datalog, topConfig, config, correctionInProgress,
-  modelDescription,
+var events, five, jLoad, datalog, topConfig, model, loggingSource,
+  correctionInProgress, modelDescription,
   block;
 
 events = require('events');//IDEA: is event ever directly used?
 five = require('johnny-five');
 jLoad = require('johnny-load');
 topConfig = require('./.private/userinfo.js');
-config = topConfig.process;
+model = topConfig.process;
+loggingSource = topConfig.logging.configuration;
 // Load the configured datalogging module
-datalog = require(topConfig.logging.activeModule);
+datalog = require(topConfig[loggingSource].path);
 
 block = {};
 block.lastCmdTime = 0;// Far in the past
@@ -30,11 +31,11 @@ block.baseSensorSet = {
   sensor : {
     class: "Sensor",
     options: {
-      freq: config.sensorPeriod
+      freq: model.sensorPeriod
     },
     lastProcessed: block.lastCmdTime,
     usage: "measurement",
-    setup: { booleanAt: config.dryLimit },
+    setup: { booleanAt: model.dryLimit },
     children: {
       valve: {
         class: "Relay",
@@ -47,8 +48,8 @@ block.baseSensorSet = {
         lastProcessed: block.lastCmdTime,
         usage: "correction",
         setup: "off",
-        adjustTime: config.flowTime,
-        adjustDelay: config.blockTime
+        adjustTime: model.flowTime,
+        adjustDelay: model.blockTime
       }
     }
   }
@@ -63,8 +64,8 @@ modelDescription = {
     lastProcessed: block.lastCmdTime,
     usage: "pressurize",
     setup: "off",
-    warmup: config.pumpWarmup,
-    cooldown: config.pumpCooldown
+    warmup: model.pumpWarmup,
+    cooldown: model.pumpCooldown
   }
 };
 
@@ -176,7 +177,7 @@ five.Board.prototype.wait2 = function (time, callback, options) {
  * of a queued series.
  *
  * @module {Integer} block.lastCmdTime Last executed/scheduled command time
- * @external {Integer} config.staggerTime Minimum time between hardware
+ * @external {Integer} model.staggerTime Minimum time between hardware
  *                                  settings change commands commands
  *
  * @param {obmect} component        johnny-load extended johnny-five Relay
@@ -189,7 +190,7 @@ function controlCommandAfter(component, minWait, command) {
   // console.log(nowString(), 'start controlCommandAfter for',
   //   component.id, minWait, command);//trace
   nowTime = Date.now();
-  block.lastCmdTime = Math.max(block.lastCmdTime + config.hardwareCycleTime,
+  block.lastCmdTime = Math.max(block.lastCmdTime + model.hardwareCycleTime,
     minWait + nowTime);
 
   component.board.wait2(block.lastCmdTime - nowTime,
@@ -212,21 +213,25 @@ function boardIsReady() {
   correctionInProgress = false;
 
   // Fill in details for the presure pump from the configuration file
-  properties = Object.keys(config.pump);
+  properties = Object.keys(model.pump);
   modelDescription.pump.options.pin = properties[0];
-  modelDescription.pump.options.id = config.pump[properties[0]];
+  modelDescription.pump.options.id = model.pump[properties[0]];
   block.pins = [];// If multiple boards, this needs to be unique for each board
   block.pins.push(modelDescription.pump.options.pin);
   block.ids = [];// This needs to be unique across all boards
   block.ids.push(modelDescription.pump.options.id);
 
   // Populate the model with sensor sets based on the user supplied information
-  config.sensorPinSet.forEach(cloneSensor, modelDescription);
+  model.sensorPinSet.forEach(cloneSensor, modelDescription);
 
   this.children = jLoad(modelDescription, this);
 
   // Initialize the datalogging module, and give it a callback to use when done
-  datalog.init(block.addComponentHandlers.bind(this), block.ids);
+  // console.log('DBG: index.boardIsReady \ncomponents:',
+  //   JSON.stringify(block.ids), '\nconfig:',
+  //   JSON.stringify(topConfig[loggingSource].configuration));//DEBUG
+  datalog.init(block.addComponentHandlers.bind(this), block.ids,
+    topConfig[loggingSource].configuration);
   datalog.addBoard(this);
 }
 
@@ -382,7 +387,7 @@ block.performCorrection = function (component) {
   controlCommandAfter(component.children.pump, operationWait, 'off');
 
   // Clear the semaphore flag after the sequence has completed
-  block.lastCmdTime += config.hardwareCycleTime;
+  block.lastCmdTime += model.hardwareCycleTime;
   component.board.wait(block.lastCmdTime - Date.now(), block.endCorrecton);//DEBUG
 };
 

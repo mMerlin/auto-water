@@ -5,13 +5,20 @@ module.exports = function (grunt) {
   // Project configuration.
   grunt.initConfig({
     nodeunit: {
-      files: ['test/**/*_test.js']
+      con: ['test/consoleLogging_test.js'],
+      dat: ['test/dataloggingApi_test.js'],
+      plt: ['test/plotlyLogging_test.js'],
+      usr: ['test/userinfo_test.js'],
+      all: ['test/**/*_test.js']
     },
     jslint: {
       main: {
         src: [
           '*.js',
-          '*/*.js',
+          'lib/*.js',
+          'test/*.js',
+          'test/*.js',
+          'examles/*.js',
           '.private/*.js'
         ],
         directives: {
@@ -32,11 +39,8 @@ module.exports = function (grunt) {
       options: {
         jshintrc: '.jshintrc'
       },
-      gruntfile: {
-        src: 'Gruntfile.js'
-      },
-      index: {
-        src: 'index.js'
+      main: {
+        src: ['Gruntfile.js', 'controlcfg.js', 'index.js']
       },
       lib: {
         src: ['lib/**/*.js']
@@ -46,6 +50,9 @@ module.exports = function (grunt) {
       },
       test: {
         src: ['test/**/*.js']
+      },
+      examples: {
+        src: ['examples/**/*.js', 'userinfo.js']
       }
     },
     watch: {

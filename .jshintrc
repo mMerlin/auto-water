@@ -12,6 +12,7 @@
   "futurehostile": true,
   "immed": true,
   "latedef": true,
+  "loopfunc": false,
   "maxcomplexity": 8,
   "maxlen": 82,
   "maxstatements": 35,

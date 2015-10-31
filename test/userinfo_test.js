@@ -1,6 +1,6 @@
 /*
- * water-load
- * https://github.com/mMerlin/water-load
+ * auto-water
+ * https://github.com/mMerlin/auto-water
  *
  * Copyright (c) 2015 H. Phil Duby
  * Licensed under the MIT license.
@@ -10,30 +10,57 @@
 /*jslint sub: true, maxlen: 120 */
 /* jshint maxlen:120 */
 
-var userConfig = require('../.private/userinfo.js');
-var path = require('path');
+// This unit test file can (will) only check the contents of the process and logging properties exported
+// from the userinfo package file.  The remaining properties need datalogging package implementation
+// specific details, and are better checked by the package specific unit tests.
 
-function isDigitalPin(val) {
-  return parseInt(val, 10) === parseFloat(val) && val >= 0;
-  // can not find jslint options to suppress warning to wrap && subexpresion
-  // wrapping gives jshint warning about unneeded grouping, which I *could* suppress
-  // return typeof val === 'number' || typeof val === 'string' && Number(val).toString() === val;
-  // if (typeof val === 'number' && val >= 0) {
-  //   return true;
-  // }
-  // return typeof val === 'string' && Number(val).toString() === val && Number(val) >= 0;
+var cfgFile;
+// cfgFile = '.private/notexist';
+// cfgFile = '.private/empty.js';
+// cfgFile = '.private/badbase.js';
+// cfgFile = '.private/emptybase.js';
+// cfgFile = '.private/mingood.js';
+// cfgFile = '.private/badnulls.js';
+// cfgFile = '.private/badMtStrings.js';
+// cfgFile = '.private/badNegOne.js';
+// cfgFile = '.private/badFloats.js';
+// cfgFile = '.private/badMtObjects.js';
+// cfgFile = '.private/badMtArrays.js';
+// cfgFile = '.private/badNested01.js';
+// cfgFile = '.private/badpump01.js';
+// cfgFile = '.private/badpump02.js';
+// cfgFile = '.private/badpump03.js';
+// cfgFile = '.private/badpump04.js';
+cfgFile = '.private/userinfo.js';
+
+var fs = require('fs');
+var path = require('path');
+try {
+  /*jslint stupid: true */
+  // In this context, synchronous check is reasonable here, and implementation
+  // of asynchronous would be a pain.
+  if (!fs.statSync(cfgFile).isFile()) {
+    cfgFile = '.private/mingood.js';
+  }
+  /*jslint stupid: false */
+} catch (e) {
+  cfgFile = './.private/mingood.js';
+}
+console.log('Using configuration file "' + cfgFile + '"');
+// convert to absolute path to handle difference between relative from CWD and relative
+// from node.js require path when running nodeunit tests in the test [sub] directory
+cfgFile = path.resolve(cfgFile);
+console.log('Using configuration file "' + cfgFile + '"');
+
+var userinfo = require(cfgFile);
+
+function isInteger(val) {
+  return parseInt(val, 10) === parseFloat(val);
 }
 
-// function hasDuplicate(arr) {
-//   var idx, len, obj;
-//   len = arr.length;
-//   obj = {};
-//   for (idx = 0; idx < len; idx += 1) {
-//     if (obj[arr[idx]]) { return true; }
-//     obj[arr[idx]] = true;
-//   }
-//   return false;
-// }
+function isNonNegativeInteger(val) {
+  return isInteger(val) && val >= 0;
+}
 
 function isComponentId(val) {
   return typeof val === 'string' && val.length > 0;
@@ -41,6 +68,17 @@ function isComponentId(val) {
 
 function isNonNullObject(obj) {
   return typeof obj === 'object' && obj !== null && !Array.isArray(obj);
+}
+
+/**
+ * return the passed argument, or an empty object, if the passed argument is not
+ * a 'normal' object
+ *
+ * @param {object} object       variable to check (and return)
+ * @return {object}
+ */
+function existingOrEmptyObject(obj) {
+  return isNonNullObject(obj) ? obj : {};
 }
 
 /*
@@ -65,119 +103,138 @@ function isNonNullObject(obj) {
 
 exports['configuration'] = {
   setUp: function (done) {
-    // setup here
-    done();
-  },
-  'process': function (test) {
-    /* jshint maxstatements: 40 */
-    var cfg, obj, properties, pin;
-    cfg = isNonNullObject(userConfig) && isNonNullObject(userConfig.process) ? userConfig.process : {};
-    test.expect(22);
+    this.process = existingOrEmptyObject(userinfo.process);
+    this.logging = existingOrEmptyObject(userinfo.logging);
 
-    test.ok(isNonNullObject(userConfig), 'user info should export an object');
-    test.ok(isNonNullObject(userConfig.process), 'should have process property object');
-    test.strictEqual(typeof cfg.sensorPeriod, 'number', 'should have numeric sensorPeriod property');
-    test.strictEqual(typeof cfg.blockTime, 'number', 'should have numeric blockTime property');
+    // constants for limit checks
+    this.minSensorPeriod = 10;
+    this.maxAnalogValue = 1023;
+    //IDEA this.minDigitalPin = 2;//do not use 0,1 pins used for firmata communications
+
+    done();
+  },// ./function setUp(done)
+  'process configuration': function (test) {
+    var cfg, val;
+    cfg = this.process;
+    test.expect(1 + (isNonNullObject(userinfo.process) ? 9 : 0));
+
+    test.ok(isNonNullObject(userinfo.process), 'userinfo should have a process property object');
+    if (!isNonNullObject(userinfo.process)) {
+      test.done();
+      return;
+    }
+
+    test.ok(isInteger(cfg.sensorPeriod) && cfg.sensorPeriod >= this.minSensorPeriod,
+      'should have integer sensorPeriod not less than ' + this.minSensorPeriod);
+    val = isInteger(cfg.sensorPeriod) && cfg.sensorPeriod >= this.minSensorPeriod ?
+        cfg.sensorPeriod : this.minSensorPeriod;
     // blockTime needs to be long enough to complete processing for all (other) sensor
     // sets.  Otherwise, the later sets will never get processed until the first one(s)
-    // stay in range.  This alwo interacts with the sensorPeriod, since a new correction
+    // stay in range.  This also interacts with the sensorPeriod, since a new correction
     // will only start when a new reading is taken.
+    test.ok(isInteger(cfg.blockTime) && cfg.blockTime > val,
+      'should have integer blockTime property with a value greater than the sensorPeriod');
+    test.ok(isNonNegativeInteger(cfg.flowTime), 'should have non-negative integer flowTime property');
+    test.ok(isNonNegativeInteger(cfg.dryLimit) && cfg.dryLimit <= this.maxAnalogValue,
+      'should have integer dryLimit between 0 and ' + this.maxAnalogValue + ' (inclusive)');
 
-    test.strictEqual(typeof cfg.dryLimit, 'number', 'should have numeric dryLimit property');
+    test.ok(isNonNegativeInteger(cfg.pumpWarmup), 'should have non-negative integer pumpWarmup property');
+    test.ok(isNonNegativeInteger(cfg.pumpCooldown), 'should have non-negative integer pumpCooldown property');
+    test.ok(isNonNegativeInteger(cfg.hardwareCycleTime),
+      'should have non-negative integer hardwareCycleTime property');
 
-    // maximum for pump (and other) pin numbers varies by board used
+    test.ok(Array.isArray(cfg.sensorPinSet) && cfg.sensorPinSet.length > 0,
+      'should have a non-empty array sensorPinSet property');
     test.ok(isNonNullObject(cfg.pump), 'should have pump property object');
-    obj = isNonNullObject(cfg.pump) ? cfg.pump : {};
-    properties = Object.keys(obj);
-    pin = properties[0] === undefined ? null : properties[0];
-    test.strictEqual(properties.length, 1, 'pump object should have 1 property (the pin number)');
-    test.ok(isDigitalPin(pin), 'pump property must be a digital pin number');
-    test.ok(isComponentId(obj[pin]), 'pump property value (id) must be a non-empty string');
-
-    // test.ok(isDigitalPin(cfg.pumpPin), 'pumpPin should be a digital pin number');
-    // test.strictEqual(typeof cfg.pumpPin, 'number', 'should have numeric pumpPin property');
-    test.strictEqual(typeof cfg.pumpWarmup, 'number', 'should have numeric pumpWarmup property');
-    test.strictEqual(typeof cfg.pumpCooldown, 'number', 'should have numeric pumpCooldown property');
-    test.strictEqual(typeof cfg.flowTime, 'number', 'should have numeric flowTime property');
-    test.ok(Array.isArray(cfg.sensorPinSet), 'sensorPinSet property should be an array');
-    test.ok(cfg.sensorPinSet.length > 0, 'at least one sensor set is needed');
-    test.strictEqual(typeof cfg.hardwareCycleTime, 'number',
-      'should have numeric hardwareCycleTime property');
-
-    test.ok(cfg.sensorPeriod >= 10,
-      'time between sensor reading should be greater than 10 milliseconds');
-    test.ok(cfg.blockTime > cfg.sensorPeriod,
-      'time between corrections should be greater sensorPeriod');
-    test.ok(cfg.dryLimit >= 0 && cfg.dryLimit <= 1023,
-      'sensor threshold mush be between 0 and 1023');
-    test.ok(cfg.pumpWarmup >= 0, 'warmup time must not be negative');
-    test.ok(cfg.pumpCooldown >= 0, 'cooldown time must not be negative');
-    test.ok(cfg.flowTime > 0, 'correction flow time must be greater than zero');
-    test.ok(cfg.hardwareCycleTime >= 0, 'hardware cycle time must not be negative');
+    // Check the array members and object properties in their own test cases
 
     test.done();
-  },
+  },// ./function 'process configuration'(done)
+  'pump configuration': function (test) {
+    var properties, pin;
+    if (!isNonNullObject(this.process.pump)) {
+      test.done();
+      return;
+    }
+    test.expect(3);
+
+    // maximum for pump (and other) pin numbers varies by (actual) board used
+    properties = Object.keys(this.process.pump);
+    pin = properties[0] === undefined ? null : properties[0];
+    test.strictEqual(properties.length, 1, 'pump object should have 1 property (the pin number)');
+    test.ok(isNonNegativeInteger(pin), 'pump property must be a digital pin number');
+    test.ok(isComponentId(this.process.pump[pin]), 'pump property value (id) must be a non-empty string');
+
+    test.done();
+  },// ./function 'pump configuration'(done)
   'sensor pin sets': function (test) {
     /* jshint maxcomplexity: 19, maxstatements: 50 */
-    var pinSets, i, set, allPins, allIds, obj, properties;
+    /* jshint maxcomplexity: 25, maxstatements: 50 */
+    var pinSets, i, set, setIdx, allPins, allIds, obj, properties, usePin, useId, key;
     allPins = {};
     allIds = {};
-    pinSets = isNonNullObject(userConfig) && isNonNullObject(userConfig.process) &&
-      Array.isArray(userConfig.process.sensorPinSet) ? userConfig.process.sensorPinSet : [];
-    test.expect(pinSets.length * 14);
+    pinSets = Array.isArray(this.process.sensorPinSet) ? this.process.sensorPinSet : [];
 
     // Intialize the (unique) list of pin numbers and ids with the pump information
-    obj = isNonNullObject(userConfig) && isNonNullObject(userConfig.processs) &&
-      isNonNullObject(userConfig.processs.pump) ? userConfig.processs.pump : {};
+    obj = existingOrEmptyObject(this.process.pump);
     properties = Object.keys(obj);
-    if (properties[0] !== undefined) {
-      allPins[properties[0]] = true;
-    }
-    if (properties[0] !== undefined && isComponentId(obj[properties[0]])) {
-      allIds[obj[properties[0]]] = true;
+    key = properties[0];
+    if (key !== undefined) {
+      allPins[key] = true;
+      if (isComponentId(obj[key])) {
+        allIds[obj[key]] = true;
+      }
     }
 
     for (i = 0; i < pinSets.length; i += 1) {
-      test.ok(Array.isArray(pinSets[i]), 'each sensorPinSet element should be an array');
-      set = Array.isArray(pinSets[i]) ? pinSets[i] : [];
-      test.strictEqual(set.length, 2, 'each sensorPinSet should have 2 elements');
-      test.ok(set.length > 0 && isNonNullObject(set[0]),
-        'first element of sensorSet ' + i + 'should be a non-empty object');
-      test.ok(set.length > 1 && isNonNullObject(set[1]),
-        'second element of sensorSet ' + i + 'should be a non-empty object');
+      set = pinSets[i];
+      test.ok(Array.isArray(set) && set.length === 2,
+        'sensorPinSet ' + i + ' should be an array with 2 elements');
+      if (Array.isArray(set) && set.length === 2) {
+        // test array members
+        test.ok(isNonNullObject(set[0]) && Object.keys(set[0]).length === 1,
+          'first element of sensorSet ' + i + ' should be an object with a single (analog pin number) property');
+        test.ok(isNonNullObject(set[1]) && Object.keys(set[1]).length === 1,
+          'second element of sensorSet ' + i + ' should be an object with a single (digital pin number) property');
 
-      obj = set.length > 0 && isNonNullObject(set[0]) ? set[0] : {};
-      properties = Object.keys(obj);
-      test.strictEqual(properties.length, 1, 'sensor spec for sensorSet ' + i + 'should have a single property');
-      test.ok(!isNonNullObject(obj) || /^[AI]\d$/.test(properties[0]),
-        properties[0] + ' should be an analog pin for sensor set ' + i);
-      test.ok(!isNonNullObject(obj) || isComponentId(obj[properties[0]]),
-        'property value should be non-empty string id for sensor set ' + i + ' analog pin');
-      test.ok(!isNonNullObject(obj) || allPins[properties[0]] === undefined,
-        'pin number ' + properties[0] + ' has been previously used');
-      test.ok(!isNonNullObject(obj) || allIds[obj[properties[0]]] === undefined,
-        'id ' + obj[properties[0]] + ' has been previously used, no duplicates allowed');
-      if (isNonNullObject(obj)) {
-        allPins[properties[0]] = true;
-        allIds[obj[properties[0]]] = true;
+        for (setIdx = 0; setIdx < 2; setIdx += 1) {// 2 === set.length
+          obj = set[setIdx];
+          if (isNonNullObject(obj)) {
+            properties = Object.keys(obj);
+            usePin = true;
+            useId = true;
+            if (properties.length === 1) {
+              key = properties[0];
+              if (setIdx === 0) {
+                test.ok(/^[AI]\d$/.test(key),
+                  'Property name "' + key + '" should be an analog pin for sensor set ' + i);
+                if (!/^[AI]\d$/.test(key)) { usePin = false; }
+              } else {
+                test.ok(isNonNegativeInteger(key),
+                  'Property name "' + key + '" should be a digital pin for sensor set ' + i);
+                if (!isNonNegativeInteger(key)) { usePin = false; }
+              }
+              test.ok(isComponentId(obj[key]),
+                'property value should be non-empty string id for sensor set ' + i +
+                (setIdx === 0 ? ' analog pin' : ' digital pin'));
+              if (!isComponentId(obj[key])) { useId = false; }
+              test.ok(!usePin || !allPins[key],
+                'pin number ' + key + ' in set ' + i + ' has been used in a previous component');
+              test.ok(!useId || !allIds[obj[key]],
+                'id ' + obj[key] + ' in set ' + i + ' has been previously used, no duplicates allowed');
+              /* jshint singleGroups: false */
+              if (usePin && ((setIdx === 0 && /^[AI]\d$/.test(key)) ||
+                  (setIdx === 1 && isNonNegativeInteger(key)))) {
+                allPins[key] = true;
+              }
+              /* jshint singleGroups: true */
+              if (useId && isComponentId(obj[key])) {
+                allIds[obj[key]] = true;
+              }
+            }
+          }
+        }
       }
-
-      obj = set.length > 1 && isNonNullObject(set[1]) ? set[1] : {};
-      properties = Object.keys(obj);
-      test.strictEqual(properties.length, 1, 'valve spec for sensorSet ' + i + 'should have a single property');
-      test.ok(!isNonNullObject(obj) || isDigitalPin(properties[0]),
-        properties[0] + ' should be a digital pin for sensor set ' + i);
-      test.ok(!isNonNullObject(obj) || isComponentId(obj[properties[0]]),
-        'property value should be non-empty string id for sensor set ' + i + ' digital pin');
-      test.ok(!isNonNullObject(obj) || allPins[properties[0]] === undefined,
-        'pin number ' + properties[0] + ' has been previously used');
-      test.ok(!isNonNullObject(obj) || allIds[obj[properties[0]]] === undefined,
-        'id ' + obj[properties[0]] + ' has been previously used, no duplicates allowed');
-      if (isNonNullObject(obj)) {
-        allPins[properties[0]] = true;
-        allIds[obj[properties[0]]] = true;
-      }
-
       // https://github.com/rwaldron/johnny-five/issues/793
       // https://github.com/rwaldron/io-plugins#minimum-plugin-class-requirements
       // https://github.com/achingbrain/board-io
@@ -185,38 +242,60 @@ exports['configuration'] = {
     }
 
     test.done();
-  },
-  'data logging': function (test) {
+  },// ./function 'sensor pin sets'(done)
+  'logging configuration': function (test) {
     var cfg;
-    cfg = isNonNullObject(userConfig) && isNonNullObject(userConfig.logging) ? userConfig.logging : {};
-    test.expect(3);
+    cfg = this.logging;
+    test.expect(1 +
+      (isNonNullObject(userinfo.logging) ? 1 : 0)
+      );
 
-    test.ok(!isNonNullObject(userConfig) || isNonNullObject(userConfig.logging),
-      'should have logging property object');
-    test.strictEqual(typeof cfg.activeModule, 'string', 'should have module string property');
+    test.ok(isNonNullObject(userinfo.logging), 'userinfo should have a logging property object');
+    if (!isNonNullObject(userinfo.logging)) {
+      test.done();
+      return;
+    }
+
+    test.ok(typeof cfg.configuration === 'string' && cfg.configuration.length > 0,
+      'should have a configuration property that is a non-empty string');
+
+    test.done();
+  },// ./function 'logging configuration'(done)
+  'datalogging module configuration': function (test) {
+    // Without the module specific implementation specification, can only check to see if the base
+    // module configuration properties exist
+    var moduleRef, cfg;
+    moduleRef = typeof this.logging.configuration === 'string' && this.logging.configuration.length > 0 ?
+        this.logging.configuration : '';
+    test.expect(//0 +
+      (moduleRef === '' ? 0 : 1) +
+        (isNonNullObject(userinfo[moduleRef]) ? 3 : 0)
+    );
+
+    if (moduleRef === '') {
+      // No module configuration reference: nothing to test here
+      test.done();
+      return;
+    }
+
+    test.ok(isNonNullObject(userinfo[moduleRef]),
+      'userinfo should have property matching the logging.configuration property value');
+    if (!isNonNullObject(userinfo[moduleRef])) {
+      // Configured datalogging property does not exist: nothing more to test here
+      test.done();
+      return;
+    }
+
+    cfg = userinfo[moduleRef];
+    test.ok(typeof cfg.path === 'string' && cfg.path.length > 0,
+      'should have a path property that is a non-empty string');
+    test.ok(cfg.configuration !== undefined, 'should have a package specific configuration property');
+
     // Compensate for the different relative file path: needs to be smarter if the specified
-    // module uses the node path list.
-    test.doesNotThrow(function () { return require.resolve(path.resolve('.', cfg.activeModule)); }, undefined,
-      'module should exist');
+    // module is found using the node path list.
+    test.doesNotThrow(function () { require.resolve(path.resolve(cfg.path)); }, undefined,
+      'The configured module "' + cfg.activeModule + '" should exist');
 
     test.done();
-  },
-  'logging module': function (test) {
-    var logger = require(path.resolve('.', userConfig.logging.activeModule));
-    test.expect(8);
-
-    // Test that the specifed datalogging module provides the needed API, but
-    // not the actual functionality.  Use a separate unit test file for each
-    // known data logging package.
-    test.strictEqual(typeof logger.init, 'function', 'datalogging module should provide an init method');
-    test.strictEqual(typeof logger.addSensor, 'function', 'datalogging module should provide an addSensor method');
-    test.strictEqual(typeof logger.addBoard, 'function', 'datalogging module should provide an addBoard method');
-    test.strictEqual(typeof logger.finalize, 'function', 'datalogging module should provide a finalize method');
-    test.strictEqual(logger.init.length, 2, 'datalogging init method should accept 2 arguments');
-    test.strictEqual(logger.addSensor.length, 1, 'datalogging addSensor method should accept 1 argument');
-    test.strictEqual(logger.addBoard.length, 1, 'datalogging addBoard method should accept 1 argument');
-    test.strictEqual(logger.finalize.length, 0, 'datalogging finalize method should accept 0 arguments');
-
-    test.done();
-  }
+  }// ./function 'datalogging module configuration'(done)
 };

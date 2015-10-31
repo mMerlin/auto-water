@@ -32,5 +32,7 @@ module.exports.process = {
 // not configure any logging.  More accurately, it configures a logging package
 // that does not actually do any logging.
 module.exports.logging = {
-  activeModule: "./lib/noLogging"
+  activeModule: "./lib/noLogging",
+  configuration: 'noLogging',
+  noLogging: null
 };

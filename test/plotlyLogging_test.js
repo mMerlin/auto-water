@@ -3,7 +3,8 @@
 /* jshint maxlen:120 */
 
 var path = require('path');
-var config = require('../.private/userinfo.js');
+// var config = require('../.private/userinfo.js');
+var config = null;
 var datalog = require('../lib/plotlyLogging.js');
 
 // Create the structure of nested objects, so can always just test if a
@@ -17,7 +18,8 @@ var CONST = {
     y: [],
     line: {},
     stream: {},
-    transform: {}
+    transform: {},
+    record: {}
   },
   // Reused assert message templates
   optional: '{context} {path} property must be {type}, when it exists at all',
@@ -27,18 +29,20 @@ var CONST = {
   nonTraceTemplate: {
     line: {},
     component: true,
+    name: true,
     stream: {
       token: true
     },
     transform: {},
-    name: true
+    record: {}
   },
   validationList: {
     fileopt: ['', 'extend', 'overwrite'],
     mode: ['', 'lines', 'markers', 'lines+markers'],
     type: ['', 'scatter'],
-    shape: ['', 'linear', 'spline', 'vhv', 'hvh', 'vh', 'hv']
-  }
+    shape: ['', 'linear', 'spline', 'vhv', 'hvh', 'vh', 'hv'],
+    events: ['', 'default', 'data', 'change', 'stateChange']
+  }// Need something(s) above for transform valdations to? property names?
 };
 
 // Boolean operation precedence test
@@ -434,336 +438,337 @@ exports['exported properties'] = {
     test.strictEqual(typeof datalog.addSensor, 'function', 'should provide an addSensor method');
     test.strictEqual(typeof datalog.addBoard, 'function', 'should provide an addBoard method');
     test.strictEqual(typeof datalog.finalize, 'function', 'should provide a finalize method');
-    test.strictEqual(datalog.init.length, 2, '2 arguments should be passed to init');
+    test.strictEqual(datalog.init.length, 3, '3 arguments should be passed to init');
     test.strictEqual(datalog.addSensor.length, 1, 'single argument should be passed to addSensor');
     test.strictEqual(datalog.addBoard.length, 1, 'single argument should be passed to addBoard');
     test.strictEqual(datalog.finalize.length, 0, 'no arguments should be passed to finalize');
 
     test.done();
-  },// ./function 'property types'(test)
-  /**
-   * Check the (nested) properties of a plotlyLogging configuration object,
-   * excluding the main and plot template object properties
-   *
-   * @param {object} test       node-unit test object
-   * @return {undefined}
-   */
-  'plotly configuration': function (test) {
-    /* jshint maxcomplexity: 16 */
-    var testCount, i, plot, obj, context, realuser, realfile;
-
-    // Calculation of the expected number of assert is a bit more complex than usual, since the base
-    // plotly configuration is an array that can have varying numbers of plot/graph configurations,
-    // each of which can have varying numbers of traces.
-    testCount = 2 + (isNonNullObject(this.cfg) ? 1 : 0);// base + plots array check
-    for (i = 0; i < this.plots.length; i += 1) {
-      testCount += 1 + (isNonNullObject(this.plots[i]) ? 7 : 0);// plot object and plot properties (to trace)
-    }
-    test.expect(testCount);
-
-    test.ok(this.cfg === undefined || isNonNullObject(this.cfg),
-      'plotlyLogging must be a (non-empty) array property, when it exists at all');
-    test.ok(isNonNullObject(this.cfg) || !this.moduleIsActive,
-      'A logging.plotlyLogging object property is required when plotlyLogging is an active module');
-
-    if (testCount <= 2) {
-      test.done();
-      return;
-    }
-
-    test.ok(Array.isArray(this.cfg.plots) && this.plots.length > 0,
-      'plotlyLogging requires a plots array property with at least 1 entry');
-    for (i = 0; i < this.plots.length; i += 1) {
-      context = 'Plot ' + i;
-      test.ok(isNonNullObject(this.plots[i]), context + ' configuration must be an object');
-      if (isNonNullObject(this.plots[i])) {
-        plot = this.plots[i];
-        test.ok(plot.target === undefined || isNonNullObject(plot.target),
-          context + ' target property must be an object, when it exists at all');
-        // plot.trace checke as part of the template validation
-        test.ok(Array.isArray(plot.plotData) && plot.plotData.length > 0,
-          context + ' requires a plotData property as a non-empty Array');
-
-        // Validate the properties of the plot target object
-        obj = existingOrEmptyObject(plot.target);
-        context = 'Plot ' + i + ' target';
-        test.ok(obj.graphOptions === undefined || isNonNullObject(obj.graphOptions),
-          context + ' graphOptions property must be an object, or undefined');
-        /* jshint singleGroups: false */// brackets not needed, but jslint wants for && expresions
-        test.ok((obj.userName === undefined && this.target.userName) ||
-          (typeof obj.userName === 'string' && obj.userName.length > 0 && this.allAccounts[obj.userName]),
-          CONST.required.supplant({context: context, path: 'a userName', type: 'a string from authentication values'}));
-        realuser = (typeof obj.userName === 'string' && obj.userName.length > 0 && this.allAccounts[obj.userName]) ?
-            obj.userName : this.target.userName;
-
-        obj = existingOrEmptyObject(obj.graphOptions);// sub object properties
-        test.ok((obj.filename === undefined && this.target.graphOptions.filename) ||
-          (typeof obj.filename === 'string' && obj.filename.length > 0),
-          CONST.required.supplant({context: context, path: 'a graphOptions.filename', type: 'a non-empty string'}));
-        realfile = typeof obj.filename === 'string' && obj.filename.length > 0 ?
-            obj.filename : this.target.graphOptions.filename;
-        test.ok(realfile && this.allAccounts[realuser].files[realfile] === undefined,
-          context + ' File "' + realfile + '" used for a previous plot for user "' + realuser + '"');
-        test.ok((obj.fileopt === undefined && this.target.graphOptions.fileopt) ||
-          (typeof obj.fileopt === 'string' && CONST.validationList.fileopt.includes(obj.fileopt)),
-          CONST.required.supplant({context: context, path: 'a graphOptions.fileopt',
-            type: 'a string from known values'}));
-        /* jshint singleGroups: true */
-      }// ./if (isNonNullObject(this.plots[i]))
-    }// ./for (i = 0; i < this.plots.length; i += 1)
-
-    test.done();
-  },// ./function 'plotly configuration'(test)
-  'plotly traces': function (test) {
-    /* jshint maxcomplexity: 17 */
-    var testCount, plot, traces, cascadeData, plotComponents, i, j, realuser, context, obj, lvl2;
-
-    testCount = 0;
-    for (i = 0; i < this.plots.length; i += 1) {
-      plot = existingOrEmptyObject(this.plots[i]);
-      traces = Array.isArray(plot.plotData) ? plot.plotData : [];
-      testCount += traces.length * 12;// trace (and nested) properties
-    }
-    test.expect(testCount);
-
-    // validate the properties (with defaults from cascadeData) for each of the
-    // traces (streams) configured for each of the plots
-    for (i = 0; i < this.plots.length; i += 1) {
-      plot = isNonNullObject(this.plots[i]) ? this.plots[i] : {};
-      cascadeData = cascadeTemplate(existingOrEmptyObject(plot.trace), this.trace);
-      obj = existingOrEmptyObject(plot.target);
-      realuser = typeof obj.userName === 'string' && obj.userName.length > 0 && this.allAccounts[obj.userName] ?
-          obj.userName : this.target.userName;
-      plotComponents = {};// Track duplicate component references within a single plot
-      traces = Array.isArray(plot.plotData) ? plot.plotData : [];
-      for (j = 0; j < traces.length; j += 1) {
-        context = 'Plot ' + i + ', trace ' + j;
-        test.ok(isNonNullObject(traces[j]),
-          context + 'configuration must be an object');
-        obj = existingOrEmptyObject(traces[j]);
-        test.ok(obj.line === undefined || isNonNullObject(obj.line),
-          CONST.optional.supplant({ context: context, path: 'line', type: 'an object' }));
-        test.ok(obj.stream === undefined || isNonNullObject(obj.stream),
-          CONST.optional.supplant({ context: context, path: 'stream', type: 'an object' }));
-        test.ok(typeof obj.component === 'string' && this.eventSource[obj.component] &&
-          !plotComponents[obj.component], context +
-          ' requires component property as a string matching a unique configured id from the process object');
-        if (typeof obj.component === 'string' && this.eventSource[obj.component]) {
-          plotComponents[obj.component] = true;// Save referenced component id
-        }
-
-        /* jshint singleGroups: false */// brackets not needed, but jslint wants for && expresions
-        test.ok((obj.x === undefined && cascadeData.x) || (Array.isArray(obj.x) && obj.x.length === 0),
-          CONST.required.supplant({context: context, path: 'x', type: 'an empty array'}));
-        test.ok((obj.y === undefined && cascadeData.y) || (Array.isArray(obj.y) && obj.y.length === 0),
-          CONST.required.supplant({context: context, path: 'y', type: 'an empty array'}));
-        test.ok((obj.mode === undefined  && cascadeData.mode) ||
-          (typeof obj.mode === 'string' && CONST.validationList.mode.includes(obj.mode)),
-          CONST.required.supplant({context: context, path: 'mode', type: 'a string from the known values'}));
-        test.ok((obj.type === undefined  && cascadeData.type) ||
-          (typeof obj.type === 'string' && CONST.validationList.type.includes(obj.type)),
-          CONST.required.supplant({context: context, path: 'type', type: 'a string from the known values'}));
-
-        lvl2 = existingOrEmptyObject(obj.line);
-        test.ok((lvl2.shape === undefined  && cascadeData.line.shape) ||
-          (typeof lvl2.shape === 'string' && CONST.validationList.shape.includes(lvl2.shape)),
-          CONST.required.supplant({ context: context, path: 'line.shape', type: 'a string from the known values' }));
-        /* jshint singleGroups: true */
-
-        lvl2 = existingOrEmptyObject(obj.stream);
-        test.ok(lvl2.maxPoints === undefined || parseInt(lvl2.maxPoints, 10) === parseFloat(lvl2.maxPoints),
-          CONST.optional.supplant({ context: context, path: 'stream.maxPoints', type: 'a positive integer' }));
-        test.strictEqual(lvl2.token, undefined,
-          context + ' stream should not have a token property');
-        this.allAccounts[realuser].available -= 1;
-        test.ok(realuser && this.allAccounts[realuser].available >= 0,
-          context + ' user "' + realuser + '" does not have enough tokens to add another trace');
-      }// ./for (j = 0; j < traces.length; j += 1)
-    }
-
-    test.done();
-  },// ./function 'plotly traces'(test)
-  /**
-   * Check the properites of the optional transform objects
-   *
-   * transform objects can exist in trace templates, or in any plot configuration
-   *
-   * @param {object} test       node-unit test object
-   * @return {undefined}
-   */
-  'plotly data transform': function (test) {
-    /* jshint maxcomplexity: 12 */
-    var testCount, plot, traces, i, j, context, obj;
-
-    testCount = 3;
-    for (i = 0; i < this.plots.length; i += 1) {
-      plot = existingOrEmptyObject(this.plots[i]);
-      traces = Array.isArray(plot.plotData) ? plot.plotData : [];
-      testCount += 3 * (traces.length + 1);// trace (and nested) properties
-    }
-    test.expect(testCount);
-
-    context = 'Main trace template';
-    test.ok(this.trace.transform === undefined || isNonNullObject(this.trace.transform),
-      CONST.optional.supplant({ context: context, path: 'transform', type: 'an object' }));
-
-    validateTransformProperties(isNonNullObject(this.trace.transform) ? this.trace.transform : {}, test, context);
-    for (i = 0; i < this.plots.length; i += 1) {
-      plot = existingOrEmptyObject(this.plots[i]);
-      obj = existingOrEmptyObject(plot.trace);
-      context = 'Plot ' + i + ' trace template';
-      test.ok(obj.transform === undefined || isNonNullObject(obj.transform),
-        CONST.optional.supplant({ context: context, path: 'transform', type: 'an object' }));
-      validateTransformProperties(isNonNullObject(obj.transform) ? obj.transform : {}, test, context);
-      traces = Array.isArray(plot.plotData) ? plot.plotData : [];
-      for (j = 0; j < traces.length; j += 1) {
-        obj = existingOrEmptyObject(traces[j]);
-        context = 'Plot ' + i + ', trace ' + j;
-        test.ok(obj.transform === undefined || isNonNullObject(obj.transform),
-          CONST.optional.supplant({ context: context, path: 'transform', type: 'an object' }));
-        validateTransformProperties(isNonNullObject(obj.transform) ? obj.transform : {}, test, context);
-      }
-    }
-
-    test.done();
-  },// ./function 'plotly data transform'(test)
-  /**
-   * Check the properites of the requied authentiation object
-   *
-   * @param {object} test       node-unit test object
-   * @return {undefined}
-   */
-  'plotly authentication': function (test) {
-    /* jshint maxcomplexity: 12, maxstatements: 36 */
-    var testCount, accumTokens, accumAccts, accumApiKeys,
-      i, j, context, obj, ary;
-
-    if (!isNonNullObject(this.cfg)) {
-      test.expect(0);
-      test.done();
-      return;
-    }
-
-    testCount = 1;
-    for (i = 0; i < this.authentication.length; i += 1) {
-      testCount += 1;
-      if (isNonNullObject(this.authentication[i])) {
-        testCount += 3;
-        obj = existingOrEmptyObject(this.authentication[i]);
-        if (Array.isArray(obj.tokens)) {
-          testCount += obj.tokens.length;
-        }
-      }
-    }
-    test.expect(testCount);
-
-    // Record and check for duplicate tokens, keys, usernames across all accounts
-    accumTokens = {};
-    accumAccts = {};
-    accumApiKeys = {};
-
-    test.ok(Array.isArray(this.cfg.authentication) && this.authentication.length > 0,
-      'plotlyLogging property requires an authentication array with at least 1 entry');
-    for (i = 0; i < this.authentication.length; i += 1) {
-      context = 'Authentication account ' + i;
-      test.ok(isNonNullObject(this.authentication[i]), context + ' configuration must be an object');
-      if (isNonNullObject(this.authentication[i])) {
-        obj = this.authentication[i];
-        test.ok(typeof obj.userName === 'string' && obj.userName.length > 0 && !accumAccts[obj.userName],
-          context + ' requires a unique userName property as a non-empty string');
-        if (typeof obj.userName === 'string' && obj.userName.length > 0) {
-          accumAccts[obj.userName] = true;
-        }
-        test.ok(typeof obj.apiKey === 'string' && /^[a-z0-9]{10}$/.test(obj.apiKey) && !accumApiKeys[obj.apiKey],
-          context + ' requires a unique userApi property as a a string of 10 lowercase alphanumeric characters');
-        if (typeof obj.apiKey === 'string' && /^[a-z0-9]{10}$/.test(obj.apiKey)) {
-          accumApiKeys[obj.apiKey] = true;
-        }
-        test.ok(Array.isArray(obj.tokens) && obj.tokens.length > 0,
-          context + ' requires a tokens array with at least 1 entry');
-
-        ary = Array.isArray(obj.tokens) ? obj.tokens : [];
-        for (j = 0; j < ary.length; j += 1) {
-          test.ok(typeof ary[j] === 'string' && /^[a-z0-9]{10}$/.test(ary[j]) && !accumTokens[ary[j]],
-            context + ', token ' + j + ' must be a unique string of 10 lowercase letters and numbers');
-          if (typeof ary[j] === 'string' && /^[a-z0-9]{10}$/.test(ary[j])) {
-            accumTokens[ary[j]] = true;
-          }
-        }
-      }
-    }
-
-    test.done();
-  },// ./function 'plotly authentication'(test)
-  /**
-   * Check the (nested) properties of a plotlyLogging trace template object
-   *
-   * @param {object} test       node-unit test object
-   * @return {undefined}
-   */
-  'plotly templates': function (test) {
-    var template, i, context;
-
-    test.expect(5 + (this.plots.length + 1) * 14);
-
-    // Verify the target template object and properties
-    context = 'Target template';
-    test.ok(this.base.target === undefined || isNonNullObject(this.base.target),
-      context + ' must be an object, when it exists at all');
-    template = cascadeTemplate(existingOrEmptyObject(this.target), CONST.emptyTarget);
-    validateTargetTemplate(template, test, context);// 4 asserts
-
-    // Verify the main/outedetectBadPropertiesr trace template object and properties
-    context = 'Main trace template';
-    test.ok(this.base.trace === undefined || isNonNullObject(this.base.trace),
-      context + ' must be an object, when it exists at all');
-    template = cascadeTemplate(existingOrEmptyObject(this.trace), CONST.emptyTrace);
-    // Check for properties that should never existing in a trace template
-    // The function performs a number of assertions equal to the number of non-object
-    // properties (nested) in the nonTraceTemplate object (currently 3)
-    detectBadProperties(CONST.nonTraceTemplate, template, test, context);
-    // Verify the datatype (and where possible contents) of all known template properties
-    validateTraceTemplate(template, test, context);// 10 asserts
-
-    // Repeat above checks for the trace template in each plot configuration
-    for (i = 0; i < this.plots.length; i += 1) {
-      context = 'plot ' + i + ' trace template';
-      test.ok(this.plots[i].trace === undefined || isNonNullObject(this.plots[i].trace),
-        context + ' must be an object, when it exists at all');
-      template = cascadeTemplate(existingOrEmptyObject(this.plots[i].trace), CONST.emptyTrace);
-      detectBadProperties(CONST.nonTraceTemplate, template, test, context);// 3 aserts
-      validateTraceTemplate(template, test, context);// 10 asserts
-    }
-
-    test.done();
-  }// ./function 'plotly templates templates'(test)
+  }// ./function 'property types'(test)
+  // /**
+  //  * Check the (nested) properties of a plotlyLogging configuration object,
+  //  * excluding the main and plot template object properties
+  //  *
+  //  * @param {object} test       node-unit test object
+  //  * @return {undefined}
+  //  */
+  // 'plotly configuration': function (test) {
+  //   /* jshint maxcomplexity: 16 */
+  //   var testCount, i, plot, obj, context, realuser, realfile;
+  //
+  //   // Calculation of the expected number of assert is a bit more complex than usual, since the base
+  //   // plotly configuration is an array that can have varying numbers of plot/graph configurations,
+  //   // each of which can have varying numbers of traces.
+  //   testCount = 2 + (isNonNullObject(this.cfg) ? 1 : 0);// base + plots array check
+  //   for (i = 0; i < this.plots.length; i += 1) {
+  //     testCount += 1 + (isNonNullObject(this.plots[i]) ? 7 : 0);// plot object and plot properties (to trace)
+  //   }
+  //   test.expect(testCount);
+  //
+  //   test.ok(this.cfg === undefined || isNonNullObject(this.cfg),
+  //     'plotlyLogging must be a (non-empty) array property, when it exists at all');
+  //   test.ok(isNonNullObject(this.cfg) || !this.moduleIsActive,
+  //     'A logging.plotlyLogging object property is required when plotlyLogging is an active module');
+  //
+  //   if (testCount <= 2) {
+  //     test.done();
+  //     return;
+  //   }
+  //
+  //   test.ok(Array.isArray(this.cfg.plots) && this.plots.length > 0,
+  //     'plotlyLogging requires a plots array property with at least 1 entry');
+  //   for (i = 0; i < this.plots.length; i += 1) {
+  //     context = 'Plot ' + i;
+  //     test.ok(isNonNullObject(this.plots[i]), context + ' configuration must be an object');
+  //     if (isNonNullObject(this.plots[i])) {
+  //       plot = this.plots[i];
+  //       test.ok(plot.target === undefined || isNonNullObject(plot.target),
+  //         context + ' target property must be an object, when it exists at all');
+  //       // plot.trace checke as part of the template validation
+  //       test.ok(Array.isArray(plot.plotData) && plot.plotData.length > 0,
+  //         context + ' requires a plotData property as a non-empty Array');
+  //
+  //       // Validate the properties of the plot target object
+  //       obj = existingOrEmptyObject(plot.target);
+  //       context = 'Plot ' + i + ' target';
+  //       test.ok(obj.graphOptions === undefined || isNonNullObject(obj.graphOptions),
+  //         context + ' graphOptions property must be an object, or undefined');
+  //       /* jshint singleGroups: false */// brackets not needed, but jslint wants for && expresions
+  //       test.ok((obj.userName === undefined && this.target.userName) ||
+  //         (typeof obj.userName === 'string' && obj.userName.length > 0 && this.allAccounts[obj.userName]),
+  //         CONST.required.
+  //           supplant({context: context, path: 'a userName', type: 'a string from authentication values'}));
+  //       realuser = (typeof obj.userName === 'string' && obj.userName.length > 0 && this.allAccounts[obj.userName]) ?
+  //           obj.userName : this.target.userName;
+  //
+  //       obj = existingOrEmptyObject(obj.graphOptions);// sub object properties
+  //       test.ok((obj.filename === undefined && this.target.graphOptions.filename) ||
+  //         (typeof obj.filename === 'string' && obj.filename.length > 0),
+  //         CONST.required.supplant({context: context, path: 'a graphOptions.filename', type: 'a non-empty string'}));
+  //       realfile = typeof obj.filename === 'string' && obj.filename.length > 0 ?
+  //           obj.filename : this.target.graphOptions.filename;
+  //       test.ok(realfile && this.allAccounts[realuser].files[realfile] === undefined,
+  //         context + ' File "' + realfile + '" used for a previous plot for user "' + realuser + '"');
+  //       test.ok((obj.fileopt === undefined && this.target.graphOptions.fileopt) ||
+  //         (typeof obj.fileopt === 'string' && CONST.validationList.fileopt.includes(obj.fileopt)),
+  //         CONST.required.supplant({context: context, path: 'a graphOptions.fileopt',
+  //           type: 'a string from known values'}));
+  //       /* jshint singleGroups: true */
+  //     }// ./if (isNonNullObject(this.plots[i]))
+  //   }// ./for (i = 0; i < this.plots.length; i += 1)
+  //
+  //   test.done();
+  // },// ./function 'plotly configuration'(test)
+  // 'plotly traces': function (test) {
+  //   /* jshint maxcomplexity: 17 */
+  //   var testCount, plot, traces, cascadeData, plotComponents, i, j, realuser, context, obj, lvl2;
+  //
+  //   testCount = 0;
+  //   for (i = 0; i < this.plots.length; i += 1) {
+  //     plot = existingOrEmptyObject(this.plots[i]);
+  //     traces = Array.isArray(plot.plotData) ? plot.plotData : [];
+  //     testCount += traces.length * 12;// trace (and nested) properties
+  //   }
+  //   test.expect(testCount);
+  //
+  //   // validate the properties (with defaults from cascadeData) for each of the
+  //   // traces (streams) configured for each of the plots
+  //   for (i = 0; i < this.plots.length; i += 1) {
+  //     plot = isNonNullObject(this.plots[i]) ? this.plots[i] : {};
+  //     cascadeData = cascadeTemplate(existingOrEmptyObject(plot.trace), this.trace);
+  //     obj = existingOrEmptyObject(plot.target);
+  //     realuser = typeof obj.userName === 'string' && obj.userName.length > 0 && this.allAccounts[obj.userName] ?
+  //         obj.userName : this.target.userName;
+  //     plotComponents = {};// Track duplicate component references within a single plot
+  //     traces = Array.isArray(plot.plotData) ? plot.plotData : [];
+  //     for (j = 0; j < traces.length; j += 1) {
+  //       context = 'Plot ' + i + ', trace ' + j;
+  //       test.ok(isNonNullObject(traces[j]),
+  //         context + 'configuration must be an object');
+  //       obj = existingOrEmptyObject(traces[j]);
+  //       test.ok(obj.line === undefined || isNonNullObject(obj.line),
+  //         CONST.optional.supplant({ context: context, path: 'line', type: 'an object' }));
+  //       test.ok(obj.stream === undefined || isNonNullObject(obj.stream),
+  //         CONST.optional.supplant({ context: context, path: 'stream', type: 'an object' }));
+  //       test.ok(typeof obj.component === 'string' && this.eventSource[obj.component] &&
+  //         !plotComponents[obj.component], context +
+  //         ' requires component property as a string matching a unique configured id from the process object');
+  //       if (typeof obj.component === 'string' && this.eventSource[obj.component]) {
+  //         plotComponents[obj.component] = true;// Save referenced component id
+  //       }
+  //
+  //       /* jshint singleGroups: false */// brackets not needed, but jslint wants for && expresions
+  //       test.ok((obj.x === undefined && cascadeData.x) || (Array.isArray(obj.x) && obj.x.length === 0),
+  //         CONST.required.supplant({context: context, path: 'x', type: 'an empty array'}));
+  //       test.ok((obj.y === undefined && cascadeData.y) || (Array.isArray(obj.y) && obj.y.length === 0),
+  //         CONST.required.supplant({context: context, path: 'y', type: 'an empty array'}));
+  //       test.ok((obj.mode === undefined  && cascadeData.mode) ||
+  //         (typeof obj.mode === 'string' && CONST.validationList.mode.includes(obj.mode)),
+  //         CONST.required.supplant({context: context, path: 'mode', type: 'a string from the known values'}));
+  //       test.ok((obj.type === undefined  && cascadeData.type) ||
+  //         (typeof obj.type === 'string' && CONST.validationList.type.includes(obj.type)),
+  //         CONST.required.supplant({context: context, path: 'type', type: 'a string from the known values'}));
+  //
+  //       lvl2 = existingOrEmptyObject(obj.line);
+  //       test.ok((lvl2.shape === undefined  && cascadeData.line.shape) ||
+  //         (typeof lvl2.shape === 'string' && CONST.validationList.shape.includes(lvl2.shape)),
+  //         CONST.required.supplant({ context: context, path: 'line.shape', type: 'a string from the known values' }));
+  //       /* jshint singleGroups: true */
+  //
+  //       lvl2 = existingOrEmptyObject(obj.stream);
+  //       test.ok(lvl2.maxPoints === undefined || parseInt(lvl2.maxPoints, 10) === parseFloat(lvl2.maxPoints),
+  //         CONST.optional.supplant({ context: context, path: 'stream.maxPoints', type: 'a positive integer' }));
+  //       test.strictEqual(lvl2.token, undefined,
+  //         context + ' stream should not have a token property');
+  //       this.allAccounts[realuser].available -= 1;
+  //       test.ok(realuser && this.allAccounts[realuser].available >= 0,
+  //         context + ' user "' + realuser + '" does not have enough tokens to add another trace');
+  //     }// ./for (j = 0; j < traces.length; j += 1)
+  //   }
+  //
+  //   test.done();
+  // },// ./function 'plotly traces'(test)
+  // /**
+  //  * Check the properites of the optional transform objects
+  //  *
+  //  * transform objects can exist in trace templates, or in any plot configuration
+  //  *
+  //  * @param {object} test       node-unit test object
+  //  * @return {undefined}
+  //  */
+  // 'plotly data transform': function (test) {
+  //   /* jshint maxcomplexity: 12 */
+  //   var testCount, plot, traces, i, j, context, obj;
+  //
+  //   testCount = 3;
+  //   for (i = 0; i < this.plots.length; i += 1) {
+  //     plot = existingOrEmptyObject(this.plots[i]);
+  //     traces = Array.isArray(plot.plotData) ? plot.plotData : [];
+  //     testCount += 3 * (traces.length + 1);// trace (and nested) properties
+  //   }
+  //   test.expect(testCount);
+  //
+  //   context = 'Main trace template';
+  //   test.ok(this.trace.transform === undefined || isNonNullObject(this.trace.transform),
+  //     CONST.optional.supplant({ context: context, path: 'transform', type: 'an object' }));
+  //
+  //   validateTransformProperties(isNonNullObject(this.trace.transform) ? this.trace.transform : {}, test, context);
+  //   for (i = 0; i < this.plots.length; i += 1) {
+  //     plot = existingOrEmptyObject(this.plots[i]);
+  //     obj = existingOrEmptyObject(plot.trace);
+  //     context = 'Plot ' + i + ' trace template';
+  //     test.ok(obj.transform === undefined || isNonNullObject(obj.transform),
+  //       CONST.optional.supplant({ context: context, path: 'transform', type: 'an object' }));
+  //     validateTransformProperties(isNonNullObject(obj.transform) ? obj.transform : {}, test, context);
+  //     traces = Array.isArray(plot.plotData) ? plot.plotData : [];
+  //     for (j = 0; j < traces.length; j += 1) {
+  //       obj = existingOrEmptyObject(traces[j]);
+  //       context = 'Plot ' + i + ', trace ' + j;
+  //       test.ok(obj.transform === undefined || isNonNullObject(obj.transform),
+  //         CONST.optional.supplant({ context: context, path: 'transform', type: 'an object' }));
+  //       validateTransformProperties(isNonNullObject(obj.transform) ? obj.transform : {}, test, context);
+  //     }
+  //   }
+  //
+  //   test.done();
+  // },// ./function 'plotly data transform'(test)
+  // /**
+  //  * Check the properites of the requied authentiation object
+  //  *
+  //  * @param {object} test       node-unit test object
+  //  * @return {undefined}
+  //  */
+  // 'plotly authentication': function (test) {
+  //   /* jshint maxcomplexity: 12, maxstatements: 36 */
+  //   var testCount, accumTokens, accumAccts, accumApiKeys,
+  //     i, j, context, obj, ary;
+  //
+  //   if (!isNonNullObject(this.cfg)) {
+  //     test.expect(0);
+  //     test.done();
+  //     return;
+  //   }
+  //
+  //   testCount = 1;
+  //   for (i = 0; i < this.authentication.length; i += 1) {
+  //     testCount += 1;
+  //     if (isNonNullObject(this.authentication[i])) {
+  //       testCount += 3;
+  //       obj = existingOrEmptyObject(this.authentication[i]);
+  //       if (Array.isArray(obj.tokens)) {
+  //         testCount += obj.tokens.length;
+  //       }
+  //     }
+  //   }
+  //   test.expect(testCount);
+  //
+  //   // Record and check for duplicate tokens, keys, usernames across all accounts
+  //   accumTokens = {};
+  //   accumAccts = {};
+  //   accumApiKeys = {};
+  //
+  //   test.ok(Array.isArray(this.cfg.authentication) && this.authentication.length > 0,
+  //     'plotlyLogging property requires an authentication array with at least 1 entry');
+  //   for (i = 0; i < this.authentication.length; i += 1) {
+  //     context = 'Authentication account ' + i;
+  //     test.ok(isNonNullObject(this.authentication[i]), context + ' configuration must be an object');
+  //     if (isNonNullObject(this.authentication[i])) {
+  //       obj = this.authentication[i];
+  //       test.ok(typeof obj.userName === 'string' && obj.userName.length > 0 && !accumAccts[obj.userName],
+  //         context + ' requires a unique userName property as a non-empty string');
+  //       if (typeof obj.userName === 'string' && obj.userName.length > 0) {
+  //         accumAccts[obj.userName] = true;
+  //       }
+  //       test.ok(typeof obj.apiKey === 'string' && /^[a-z0-9]{10}$/.test(obj.apiKey) && !accumApiKeys[obj.apiKey],
+  //         context + ' requires a unique userApi property as a a string of 10 lowercase alphanumeric characters');
+  //       if (typeof obj.apiKey === 'string' && /^[a-z0-9]{10}$/.test(obj.apiKey)) {
+  //         accumApiKeys[obj.apiKey] = true;
+  //       }
+  //       test.ok(Array.isArray(obj.tokens) && obj.tokens.length > 0,
+  //         context + ' requires a tokens array with at least 1 entry');
+  //
+  //       ary = Array.isArray(obj.tokens) ? obj.tokens : [];
+  //       for (j = 0; j < ary.length; j += 1) {
+  //         test.ok(typeof ary[j] === 'string' && /^[a-z0-9]{10}$/.test(ary[j]) && !accumTokens[ary[j]],
+  //           context + ', token ' + j + ' must be a unique string of 10 lowercase letters and numbers');
+  //         if (typeof ary[j] === 'string' && /^[a-z0-9]{10}$/.test(ary[j])) {
+  //           accumTokens[ary[j]] = true;
+  //         }
+  //       }
+  //     }
+  //   }
+  //
+  //   test.done();
+  // },// ./function 'plotly authentication'(test)
+  // /**
+  //  * Check the (nested) properties of a plotlyLogging trace template object
+  //  *
+  //  * @param {object} test       node-unit test object
+  //  * @return {undefined}
+  //  */
+  // 'plotly templates': function (test) {
+  //   var template, i, context;
+  //
+  //   test.expect(5 + (this.plots.length + 1) * 14);
+  //
+  //   // Verify the target template object and properties
+  //   context = 'Target template';
+  //   test.ok(this.base.target === undefined || isNonNullObject(this.base.target),
+  //     context + ' must be an object, when it exists at all');
+  //   template = cascadeTemplate(existingOrEmptyObject(this.target), CONST.emptyTarget);
+  //   validateTargetTemplate(template, test, context);// 4 asserts
+  //
+  //   // Verify the main/outedetectBadPropertiesr trace template object and properties
+  //   context = 'Main trace template';
+  //   test.ok(this.base.trace === undefined || isNonNullObject(this.base.trace),
+  //     context + ' must be an object, when it exists at all');
+  //   template = cascadeTemplate(existingOrEmptyObject(this.trace), CONST.emptyTrace);
+  //   // Check for properties that should never existing in a trace template
+  //   // The function performs a number of assertions equal to the number of non-object
+  //   // properties (nested) in the nonTraceTemplate object (currently 3)
+  //   detectBadProperties(CONST.nonTraceTemplate, template, test, context);
+  //   // Verify the datatype (and where possible contents) of all known template properties
+  //   validateTraceTemplate(template, test, context);// 10 asserts
+  //
+  //   // Repeat above checks for the trace template in each plot configuration
+  //   for (i = 0; i < this.plots.length; i += 1) {
+  //     context = 'plot ' + i + ' trace template';
+  //     test.ok(this.plots[i].trace === undefined || isNonNullObject(this.plots[i].trace),
+  //       context + ' must be an object, when it exists at all');
+  //     template = cascadeTemplate(existingOrEmptyObject(this.plots[i].trace), CONST.emptyTrace);
+  //     detectBadProperties(CONST.nonTraceTemplate, template, test, context);// 3 aserts
+  //     validateTraceTemplate(template, test, context);// 10 asserts
+  //   }
+  //
+  //   test.done();
+  // }// ./function 'plotly templates templates'(test)
 };
 
-exports['call sequence validation'] = {
-  setUp: function (done) {
-    // setup here
-    done();
-  },// ./function setup(done)
-  /**
-   * Check that the datalogging api detects out of sequence method calls
-   *
-   * @param {object} test       node-unit test object
-   * @return {undefined}
-   */
-  'no init': function (test) {
-    var noInitPrefix = 'Call init before calling ';
-    test.expect(3);
-
-    test.throws(function () {return datalog.finalize(); }, function (err) {
-      return err instanceof Error && err.message === noInitPrefix + 'finalize';
-    }, 'unexpected error (message)');
-    test.throws(function () {return datalog.addSensor(); }, function (err) {
-      return err instanceof Error && err.message === noInitPrefix + 'addSensor';
-    }, 'unexpected error (message)');
-    test.throws(function () {return datalog.addBoard(); }, function (err) {
-      return err instanceof Error && err.message === noInitPrefix + 'addBoard';
-    }, 'unexpected error (message)');
-
-    test.done();
-  }// ./function 'no init'(test)
-};
+// exports['call sequence validation'] = {
+//   setUp: function (done) {
+//     // setup here
+//     done();
+//   },// ./function setup(done)
+//   /**
+//    * Check that the datalogging api detects out of sequence method calls
+//    *
+//    * @param {object} test       node-unit test object
+//    * @return {undefined}
+//    */
+//   'no init': function (test) {
+//     var noInitPrefix = 'Call init before calling ';
+//     test.expect(3);
+//
+//     test.throws(function () {return datalog.finalize(); }, function (err) {
+//       return err instanceof Error && err.message === noInitPrefix + 'finalize';
+//     }, 'unexpected error (message)');
+//     test.throws(function () {return datalog.addSensor(); }, function (err) {
+//       return err instanceof Error && err.message === noInitPrefix + 'addSensor';
+//     }, 'unexpected error (message)');
+//     test.throws(function () {return datalog.addBoard(); }, function (err) {
+//       return err instanceof Error && err.message === noInitPrefix + 'addBoard';
+//     }, 'unexpected error (message)');
+//
+//     test.done();
+//   }// ./function 'no init'(test)
+// };

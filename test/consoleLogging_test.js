@@ -3,7 +3,8 @@
 /* jshint maxlen:120 */
 
 var path = require('path');
-var config = require('../.private/userinfo.js');
+// var config = require('../.private/userinfo.js');
+var config = null;
 var datalog = require('../lib/consoleLogging.js');
 
 function isNonNullObject(obj) {
@@ -115,7 +116,7 @@ exports['exported properties'] = {
     test.strictEqual(typeof datalog.addSensor, 'function', 'should provide an addSensor method');
     test.strictEqual(typeof datalog.addBoard, 'function', 'should provide an addBoard method');
     test.strictEqual(typeof datalog.finalize, 'function', 'should provide a finalize method');
-    test.strictEqual(datalog.init.length, 2, '2 arguments should be passed to init');
+    test.strictEqual(datalog.init.length, 3, '3 arguments should be passed to init');
     test.strictEqual(datalog.addSensor.length, 1, 'single argument should be passed to addSensor');
     test.strictEqual(datalog.addBoard.length, 1, 'single argument should be passed to addBoard');
     test.strictEqual(datalog.finalize.length, 0, 'no arguments should be passed to finalize');
