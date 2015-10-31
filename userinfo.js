@@ -18,7 +18,9 @@ module.exports.process = {
     [{ "A0": "Moisture Sensor 1" }, { 8: "Solenoid 1"}],
     [{ "A1": "Moisture Sensor 2" }, { 4: "Solenoid 2"}],
     [{ "A2": "Moisture Sensor 3" }, { 3: "Solenoid 3"}],
-    [{ "A3": "Moisture Sensor 4" }, { 7: "Solenoid 4"}]
+    [{ "A3": "Moisture Sensor 4" }, { 7: "Solenoid 4"}],
+    [{ "A4": "Moisture Sensor 5" }, { 9: "Solenoid 5"}],
+    [{ "A5": "Moisture Sensor 6" }, { 12: "Solenoid 6"}]
   ],
   hardwareCycleTime: 1000// minumum ms between hardware 'power' operations
 };

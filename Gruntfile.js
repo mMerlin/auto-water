@@ -11,7 +11,9 @@ module.exports = function (grunt) {
       main: {
         src: [
           '*.js',
-          '*/*.js',
+          'lib/*.js',
+          'test/*.js',
+          'test/*.*.js',
           '.private/*.js'
         ],
         directives: {

@@ -51,26 +51,6 @@ function isLoggingModuleActive(moduleName) {
   return false;
 }
 
-// https://stackoverflow.com/questions/23328902/nodeunit-testing-event-based-async-code
-// var events = require('events');
-// var asyncSetup = new events.EventEmitter();
-//
-// function async_setup(app, callback) {
-//   asyncSetup.addListener('setup-complete', function () {
-//     callback();
-//   });
-//   setTimeout(function () {
-//     // if (app.result) {
-//     //   throw new Error("AlreadyConfiguredAppError");
-//     // }
-//     // app.result = "app is configured";
-//     // asyncSetup.emit('setup-complete', app.result);
-//     // app();
-//     asyncSetup.emit('setup-complete');
-//   }, 5000);
-//   return app;
-// }
-
 /*
   ======== A Handy Little Nodeunit Reference ========
   https://github.com/caolan/nodeunit
@@ -166,7 +146,13 @@ exports['call sequence validation'] = {
   setUp: function (done) {
     // setup here
     done();
-  },
+  },// ./function setup(done)
+  /**
+   * Check that the datalogging api detects out of sequence method calls
+   *
+   * @param {object} test       node-unit test object
+   * @return {undefined}
+   */
   'no init': function (test) {
     var noInitPrefix = 'Call init before calling ';
     test.expect(3);
@@ -182,5 +168,39 @@ exports['call sequence validation'] = {
     }, 'unexpected error (message)');
 
     test.done();
-  }
+  }// ./function 'no init'(test)
 };
+
+// exports['initialize logging'] = {
+//   setUp: function (done) {
+//     var dummyEmitter = new events.EventEmitter();
+//
+//     // setup here
+//     done();
+//   },// ./function setup(done)
+//   '': function (test) {
+//     test.expect(3);
+//
+//
+//     test.done();
+//   }// ./function ''(test)
+// }
+// https://stackoverflow.com/questions/23328902/nodeunit-testing-event-based-async-code
+// var events = require('events');
+// var asyncSetup = new events.EventEmitter();
+//
+// function async_setup(app, callback) {
+//   asyncSetup.addListener('setup-complete', function () {
+//     callback();
+//   });
+//   setTimeout(function () {
+//     // if (app.result) {
+//     //   throw new Error("AlreadyConfiguredAppError");
+//     // }
+//     // app.result = "app is configured";
+//     // asyncSetup.emit('setup-complete', app.result);
+//     // app();
+//     asyncSetup.emit('setup-complete');
+//   }, 5000);
+//   return app;
+// }
