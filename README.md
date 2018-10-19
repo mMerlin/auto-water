@@ -2,7 +2,7 @@ Control and log sensor based watering events
 
 Use sensors to control the activation of a pump and (one at a time) solenoids to
 maintain the desired moisture levels.  Record each watering event to an online
-charting application.  Only one valve is every opened at once.  That is a
+charting application.  Only one valve is ever opened at once.  That is a
 deliberate design choice.  The water source is not pressurized, and the pump
 being used is not strong enough to handle more than one at a time.
 
